@@ -1,0 +1,125 @@
+---
+title: "Missing data"
+author: "Lan Kelly"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:   
+  word_document: 
+  reference_docx: rmarkdown-styles-SAP.docx
+---
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
+error=FALSE, comment='', dpi=400)
+options(knitr.kable.NA = '')
+options(width=1000) # Wide pages
+options(scipen=999) # avoid scientific presentation
+source = 'real_data'
+#source = 'dummy_data'
+source('1_ecmo_ich_data_prep.R') # prepares the data and runs exclusions
+library(visdat)
+
+```
+
+# How complete is the data?
+
+#### a) Missing data from patient records
+
+Here we look at missing data from all ECMO patients.
+
+
+```{r, fig.width=8}
+# remove conditional variables and lists
+for_missing = select(ecmo_patients, -pin,  -stroke_type) %>% # remove ID; any_ecmo is never missing; stroke_type is a list variable
+  filter(any_ecmo == "Yes") %>%
+mutate(
+  ethnicity = ifelse(ethnicity=='Missing', NA, ethnicity),
+  outcome = ifelse(outcome %in% c('','unknown'), NA, outcome)) %>% # tidy up missing outcome
+  mutate_if(~is.character(.x), ~ifelse(.x=='', NA, .x)) %>%
+  select(-any_ecmo)
+
+
+ncols = ncol(for_missing) 
+nhalf = round(ncols/2)
+half1 <- for_missing %>% select(c(1:nhalf))
+half2 <- for_missing %>% select(!c(1:nhalf))
+half1  %>%
+  vis_dat()
+half2 %>% 
+  vis_dat()
+
+
+```
+
+The grey areas are the missing data. 
+
+
+\newpage
+###### Table of percentages of missing
+
+```{r}
+# added 13 Aug 2021 LK
+missing_perc = for_missing %>%
+  #select(-any_ecmo) %>%
+  select(!c(age, sex, country,any_mv, site_name)) %>% 
+  mutate_all(is.na) %>% # convert all to binary missing yes or no
+  pivot_longer(cols=everything()) %>% # long format
+  group_by(name, value) %>% # count missing
+  tally() %>%
+  group_by(name) %>%
+  mutate(p = round(prop.table(n)*100),
+         value = ifelse(value==TRUE, 'Missing', 'Not_missing')) %>%
+  ungroup() %>%
+  select(-n) %>%
+  pivot_wider(names_from = value, values_from=p) %>%
+  arrange(Missing) %>%
+  select(-'Not_missing') #simplify
+ftab = flextable(missing_perc) %>%
+  theme_box() %>%
+  autofit()
+ftab
+```
+
+\newpage
+#### b) Missing data from daily records
+
+```{r, include=FALSE}
+# exclude missing sex
+to_exclude = filter(patients, sex=='Missing')$pin
+combined = filter(combined, !pin %in% to_exclude)
+patients = filter(patients, !pin %in% to_exclude)
+daily = filter(daily, !pin %in% to_exclude)
+for_missing = filter(for_missing, !is.na(sex))
+```
+ECMO patients only
+```{r, fig.width=7}
+# remove conditional variables and lists
+for.missing = select(daily_ecmo, -c(pin, ecmo)) %>%
+  mutate_if(~is.character(.x), ~ifelse(.x=='', NA, .x)) # change '' to missing for character variables
+vis_dat(for.missing)
+```
+
+The grey areas are the missing data.
+
+\newpage
+###### Table of percentages of missing
+
+```{r,include=F}
+# added 18 March 2021
+missing_perc = mutate_all(for.missing, is.na) %>% # convert all to binary missing yes or no
+  pivot_longer(cols=everything()) %>% # long format
+  group_by(name, value) %>% # count missing
+  tally() %>%
+  group_by(name) %>%
+  mutate(p = round(prop.table(n)*100),
+         value = ifelse(value==TRUE, 'Missing', 'Not_missing')) %>%
+  ungroup() %>%
+  select(-n) %>%
+  pivot_wider(names_from = value, values_from=p) %>%
+  arrange(Missing) %>%
+  select(-'Not_missing') #simplify
+ftab = flextable(missing_perc) %>%
+  theme_box() %>%
+  autofit()
+```
+```{r}
+ftab
+```
