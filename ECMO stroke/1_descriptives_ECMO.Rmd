@@ -145,7 +145,7 @@ The following analysis is for the `r nrow(ecmo_patients)` V-V ECMO patients only
 ### Summaries for time variables in days
 
 ```{r}
-time_vars = c('days_ecmo','days_hosp','days_vent','days_sympt_hosp','day')
+time_vars = c('days_ecmo','days_hosp','days_vent','days_sympt_hosp','days_vent_ecmo','day')
 # ecmo_patients <- ecmo_patients %>%
 #   mutate(
 #     days_ecmo = as.numeric(date_ecmo_discontinued - date_ecmo + 0.5),
@@ -170,6 +170,7 @@ tab = select(ecmo_patients, pin, all_of(time_vars)) %>%
     Variable == 'days_ecmo' ~ 'Length of the ECMO run',
     Variable == 'days_hosp' ~ 'Hospital length of stay',
     Variable == 'days_vent' ~ "Duration of mechanical ventilation",
+    Variable == 'days_mech_vent' ~ "Days from mechanical ventilation to ECMO",
     Variable == 'days_sympt_hosp' ~ "Days from first symptoms to hospitalisation",
     Variable == 'day' ~ 'Day put on ECMO'
   ))
@@ -743,7 +744,7 @@ knitr::kable(tab_stroke, digits=1)
 
 The next table shows whether the stroke was after initiation of ECMO.
 ```{r, results='asis'}
-tab_stroke2 = with(ecmo_patients %>% filter(complication_stroke == "Yes"), freq(stroke_after_ECMO, round.digits=0, report.nas	=FALSE, cumul = FALSE))
+tab_stroke2 = with(ecmo_patients %>% filter(complication_stroke == "Yes"), freq(stroke_after_ecmo, round.digits=0, report.nas	=FALSE, cumul = FALSE))
 knitr::kable(tab_stroke2, digits=1)
 
 
@@ -756,12 +757,12 @@ This table is a cross-tabulation of anticoagulant use by stroke for V-V ECMO pat
 ```{r, results='asis'}
 to_stat = combined_ecmo %>% 
   filter(ecmo_type == "Venous-Venous" 
-         #,is.na(stroke_before_ECMO) | stroke_before_ECMO != "Yes"
+         #,is.na(stroke_before_ecmo) | stroke_before_ecmo != "Yes"
          ) %>%
   group_by(pin) %>%
   slice_head(n=1) %>%
   ungroup() %>%
-  select(pin, anticoagulants, complication_stroke, stroke_before_ECMO) %>%
+  select(pin, anticoagulants, complication_stroke, stroke_before_ecmo) %>%
   mutate(complication_stroke = ifelse(is.na(complication_stroke), "Missing",
                                             complication_stroke))
 
@@ -786,7 +787,7 @@ summary(tab_ac)
 
 ```{r}
 # remove unknown and empty (March 2021)
-to_plot = ecmo_patients %>% filter(stroke_after_ECMO == "Yes"  )
+to_plot = ecmo_patients %>% filter(stroke_after_ecmo == "Yes"  )
 
 #Patients with no stroke type have been excluded from this plot.
 # to_remove = NULL
