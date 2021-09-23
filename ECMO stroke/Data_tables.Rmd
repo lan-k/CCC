@@ -1,0 +1,410 @@
+---
+title: "Data mockup tables"
+author: "Lan Kelly"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:   
+  word_document: 
+  reference_docx: rmarkdown-styles-SAP.docx
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
+error=FALSE, comment='', dpi=400)
+options(knitr.kable.NA = '')
+options(width=1000) # Wide pages
+options(scipen=999) # avoid scientific presentation
+source = 'real_data'
+#source = 'dummy_data'
+source('1_ecmo_ich_data_prep.R') # prepares the data and runs exclusions
+library(visdat)
+library(summarytools)
+library(pander)
+library(naniar)
+library(arsenal)
+library(tableone)
+library(labelled)
+
+mycontrols  <- tableby.control(test=FALSE, total=FALSE,
+                               na.action=na.tableby(T),
+                               numeric.stats=c("Nmiss", "median", "q1q3","min","max"),
+                               cat.stats=c("Nmiss","countpct"),
+                               stats.labels=list(Nmiss="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
+
+ecmo_patients <- ecmo_patients %>% 
+  filter(!is.na(date_ecmo_discontinued)) %>%
+  mutate(complication_stroke=factor(complication_stroke, levels=c("No", "Yes"),
+                                    labels=c("Stroke = No", "Stroke = Yes")))
+
+```
+
+
+The following tables are based on the document Data Mock Ups_V3.docx. The data is from `r data_date`. 
+
+\newpage
+# Comparison of V-V ECMO patients with and without stroke
+
+```{r, results='asis'}
+
+# **`r nrow(timechecks %>% filter(any_ecmo == "Yes"))` patients who have implausible dates during their hospital stay have been removed**, including `r nrow(timechecks %>% filter(stroke_before_ecmo == "Yes",any_ecmo == "Yes"))` who appeared to have stroke before ECMO. 
+
+
+
+nstroke_before = nrow(ecmo_patients %>%
+  filter(stroke_after_ecmo == "No"))
+
+#still need RR at time of intubation, time from intubation to ECMO
+ecmo_patients <- ecmo_patients %>% filter(ecmo_type == "Venous-Venous") %>%
+  mutate(ethnicity = ifelse(is.na(ethnicity), "Missing", ethnicity))
+
+
+vars <- c('age','sex','ethnicity'
+          ,'country','bmi','apache_ii','sofa','pregnant'
+          ,"comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension'
+          ,'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease"
+          ,'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot'
+          ,"comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease'
+          )
+
+
+tabdata = ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(vars), complication_stroke) %>%
+  set_variable_labels(age =  "Age",
+                     sex="Sex",
+                     ethnicity="Ethnicity",
+                     country='Country',
+                     bmi='BMI',apache_ii='APACHE II',sofa='SOFA',
+                     pregnant='Pregnant',
+                     comorbidity_obesity = "Comorbid obesity" ,
+                     comorbidity_immuno='Comorbid immunosuppression',
+                     comorbidity_hypertension='Comorbid hypertension',
+                     comorbidity_diabetes='Comorbid diabetes',
+                     comorbidity_smoking="Comorbid smoking",
+                     comorbidity_chronic_cardiac_disease="Comorbid chronic cardiac disease",
+                     comorbidity_chronic_kidney_disease='Comorbid CKD',
+                     comorbidity_chronic_alcohol_abuse_eot='Comorbid alcohol abuse',
+                     comorbidity_malignant_neoplasm="Comorbid malignant neoplasm",
+                     comorbidity_severe_liver_disease='Comorbid severe liver disease',
+                      complication_stroke="Stroke"
+                      )
+
+
+# cat_vars = c('sex','ethnicity','country','pregnant',
+#           "comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension',
+#           'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease",
+#           'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot',
+#           "comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease')
+# 
+# skewvars <- c('age','bmi','apache_ii','sofa')
+
+
+formula <- as.formula(paste0("complication_stroke ~", paste0(vars, collapse="+")))
+
+tab1 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab1, title='Patient Characteristics') 
+
+
+## Create a TableOne object
+# tab1 <- CreateTableOne(vars = vars, data = tabdata, factorVars = cat_vars,
+#                        includeNA = T,
+#                        strata="complication_stroke")
+
+
+#kableone(print(tab1,test=F, varLabels=T,pDigits=2, missing = F)) #nonnormal = skewvars, 
+
+```
+
+
+For the `r nrow(tabdata)` patients who have **discontinued** V-V ECMO, excluding the `r nstroke_before` patients who had a stroke before ECMO. 
+
+
+\newpage
+### Patients pre V-V ECMO respiratory support characteristics
+
+Pre-ECMO characteristics for the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO.
+
+```{r, results='asis'}
+
+#var_label(tabdata)
+
+#still need static compliance
+
+
+ecmo_vars <-c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "ecmo_highest_respiratory_rate_6hr_before", "rr_vent",
+         'days_sympt_hosp',"days_icu",'days_hosp', 'days_ecmo',
+         'days_vent','days_vent_ecmo', 'day', 
+         "outcome")
+cat_vars = c('outcome')
+
+skewvars <- c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "days_icu",'days_hosp', 'days_ecmo','days_vent',"rr_vent",
+         "ecmo_highest_respiratory_rate_6hr_before",'days_vent_ecmo',
+          'days_sympt_hosp','day')
+
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(ecmo_vars), complication_stroke) %>%
+  set_variable_labels(ecmo_highest_fi_o2_6hr_before = "Pre-ECMO FiO2",
+                      ecmo_highest_peep_6hr_before = "Pre-ECMO PEEP",
+                      ecmo_worst_pa_o2_6hr_before = "Pre-ECMO PaO2",
+                      ecmo_worst_pa_co2_6hr_before = "Pre-ECMO PaCO2",
+                      ecmo_prone_before = "Pre-ECMO prone positioning",
+                      ecmo_neuromuscolar_blockage_before = "Pre-ECMO neuromuscular blockade",
+                      ecmo_highest_respiratory_rate_6hr_before = "Highest RR before ECMO (breaths/min)",
+                      rr_vent="Respiratory rate at time of ventilation (breaths/min)",
+                      days_icu = "Days in ICU",
+                      days_ecmo='Length of the ECMO run',
+                      days_hosp='Hospital length of stay',
+                      days_vent="Days of mechanical ventilation",
+                      days_vent_ecmo = "Days from mechanical ventilation to ECMO",
+                      days_sympt_hosp="Days from first symptoms to hospitalisation",
+                      day='Day put on ECMO',
+                      outcome='Outcome',
+                      complication_stroke="Stroke")
+
+
+formula <- as.formula(paste0("complication_stroke ~", paste0(ecmo_vars, collapse="+")))
+
+tab2 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab2, title='ECMO respiratory support')
+
+
+
+# ## Create a TableOne object
+# tab2 <- CreateTableOne(vars = ecmo_vars, data = tabdata, factorVars = cat_vars,
+#                        includeNA = T,
+#                        strata="complication_stroke")
+# 
+# 
+# kableone(print(tab2,test=F,varLabels=T,pDigits=2,  missing = F,
+#                caption = "Patients pre-ECMO respiratory support characteristics")) #nonnormal = skewvars,
+
+```
+
+
+
+
+\newpage
+### Description of neurological complications
+
+For the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO. A patient could have up to two stroke types.
+
+```{r, results='asis'}
+
+neuro_vars <-c(
+              # "complication_stroke_date", "date_ecmo",
+              # "stroke_after_ecmo",
+               "anticoagulants",
+               "stroke_during_treatment_type_intraparenchymal_haemorrhage",
+               "stroke_during_treatment_type_ischemic_stroke" ,
+                "stroke_during_treatment_type_subarachnoid_haemorrhage",
+               "stroke_during_treatment_type_hypoxic_ischemic_brain_injury"
+                 )
+
+factorvars <- c(
+               # "stroke_after_ecmo",
+               "anticoagulants",
+               "stroke_during_treatment_type_intraparenchymal_haemorrhage",
+               "stroke_during_treatment_type_ischemic_stroke" ,
+                "stroke_during_treatment_type_subarachnoid_haemorrhage",
+               "stroke_during_treatment_type_hypoxic_ischemic_brain_injury")
+
+tabdata = ecmo_patients %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(neuro_vars)) %>%
+  set_variable_labels(
+                      #  complication_stroke_date = "Stroke Date",
+                      #  date_ecmo = "ECMO date",
+                      # stroke_after_ecmo = "Stroke After ECMO",
+                      anticoagulants = "Anticoagulant Use",
+                      stroke_during_treatment_type_intraparenchymal_haemorrhage = 
+                        "Intraparenchymal hemorrhage ",
+                      stroke_during_treatment_type_ischemic_stroke = 
+                        "Ischemic stroke",
+                      stroke_during_treatment_type_subarachnoid_haemorrhage = 
+                        "Subarachnoid hemorrhage",
+                      stroke_during_treatment_type_hypoxic_ischemic_brain_injury = 
+                        "Hypoxic ischemic brain injury")
+
+
+
+
+formula <- as.formula(paste0(" ~", paste0(neuro_vars, collapse="+")))
+
+tab3 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab3, title="Neurological complications")
+
+
+
+# ## Create a TableOne object
+# tab3 <- CreateTableOne(vars = neuro_vars, data = tabdata, factorVars = factorvars,
+#                        includeNA = T)
+# 
+# 
+# kableone(print(tab3, test=F, varLabels=T,pDigits=2, missing = F,
+#                caption = "Relevant Complications during ECMO run"))
+
+```
+
+
+
+\newpage
+### Complications during ECMO run
+
+Complications of ECMO for the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO.
+
+Some complications have not been added yet (eg thrombocytopenia, lactic acidosis).
+
+```{r, results='asis'}
+
+complic_vars <-c("complication_cardiac_arrest","complication_bacteraemia",
+                 "complication_viral_pheumonitis","complication_bacterial_pneumonia",
+                 "complication_haemorrhage","complication_anaemia",
+                 "complication_acute_renal_failure","complication_rhabdomyolysis",
+                 "complication_liver_dysfunction" ,"complication_hyperbilirunemia"
+                 )
+
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(complic_vars), complication_stroke) %>%
+  set_variable_labels(complication_cardiac_arrest = "Cardiac Arrest",
+                      complication_bacteraemia = "Bacteraemia",
+                      complication_viral_pheumonitis = "Viral pneumonitis",
+                      complication_bacterial_pneumonia = "Bacterial Pneumonia",
+                      complication_haemorrhage = "Haemorrhage",
+                      complication_anaemia = "Anaemia",
+                      complication_acute_renal_failure = "Acute renal failure",
+                      complication_rhabdomyolysis = "Rhabdomyolysis",
+                      complication_liver_dysfunction = "Liver Dysfunction",
+                      complication_hyperbilirunemia = "Hyperbilirunemia",
+                      complication_stroke="Stroke")
+
+formula <- as.formula(paste0("complication_stroke ~", paste0(complic_vars, collapse="+")))
+
+tab4 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab4, title="Complications during ECMO run")
+
+
+
+# ## Create a TableOne object
+# tab4 <- CreateTableOne(vars = complic_vars, data = tabdata, factorVars = complic_vars,
+#                        includeNA = T,
+#                        strata="complication_stroke")
+# 
+# 
+# kableone(print(tab4, test=F, varLabels=T,pDigits=2, missing = F,
+#                caption = "Relevant Complications during ECMO run"))
+
+```
+
+
+
+
+
+\newpage
+### Characteristics of ECMO support   
+
+This table describes characteristics of the cannula used for ECMO
+
+```{r, results='asis'}
+
+cannula_vars <-c('cannula_lumen',"ecmo_location_cannulation",
+                 'ecmo_drainage_cannula_insertion_site', 
+                 'ecmo_return_cannula_insertion_site',
+                 "ecmo_drainage_cannula_size" ,"ecmo_return_cannula_size",
+                 "ecmo_IJ_cannula_size_DL","ecmo_IJ_cannula_size_SL",
+                 "ecmo_circuit_change")
+
+##STILL NEED CIRCUIT CHANGE
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(cannula_vars), complication_stroke) %>%
+  set_variable_labels(cannula_lumen = "Cannulation",
+                      ecmo_location_cannulation = "Cannula location",
+                      ecmo_drainage_cannula_insertion_site = "Drainage Insertion Site",
+                      ecmo_return_cannula_insertion_site = "Return Insertion Site",
+                      ecmo_drainage_cannula_size = "Drainage Cannula Size",
+                      ecmo_return_cannula_size = "Return Cannula Size",
+                      ecmo_IJ_cannula_size_DL = "DL IJ Cannula Size",
+                      ecmo_IJ_cannula_size_SL = "SL IJ Cannula Size",
+                      ecmo_circuit_change = "Circuit change",
+                      complication_stroke="Stroke")
+
+formula <- as.formula(paste0("complication_stroke ~", paste0(cannula_vars, collapse="+")))
+
+tab5 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab5, title="Characteristics of ECMO support")
+```
+
+
+\newpage
+### Arterial blood gases trends around ECMO initiation
+
+Still to do
+
+
+### Inflammatory and coagulation markers trends around ECMO initiation
+```{r, results='asis'}
+
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(contains("pre_ecmo_high"),
+         contains("ecmo_high_"),
+         contains("ecmo_discont_"),
+         complication_stroke)
+
+vars <-names(tabdata %>% select(!complication_stroke))
+
+
+tabdata <- tabdata    %>%
+  set_variable_labels(pre_ecmo_high_LDH = "Pre ECMO highest LDH",
+                      pre_ecmo_high_CRP = "Pre ECMO highest CRP",
+                      pre_ecmo_high_d_dimer = "Pre ECMO highest D-Dimer",
+                      pre_ecmo_high_ferritin = "Pre ECMO highest ferritin",
+                      pre_ecmo_high_il_6 = "Pre ECMO highest IL-6",
+                      pre_ecmo_high_fibrinogen = "Pre ECMO highest fibrinogen",
+                      pre_ecmo_high_WBC = "Pre ECMO highest WBC",
+                      pre_ecmo_high_lymphocyte_count = "Pre ECMO highest lymphocytic count",
+                      ecmo_high_LDH = "ECMO initiation LDH",
+                      ecmo_high_CRP = "ECMO initiation CRP",
+                      ecmo_high_d_dimer = "ECMO initiation D-Dimer",
+                      ecmo_high_ferritin = "ECMO initiation ferritin",
+                      ecmo_high_il_6 = "ECMO initiation IL-6",
+                      ecmo_high_fibrinogen = "ECMO initiation fibrinogen",
+                      ecmo_high_WBC = "ECMO initiation WBC",
+                      ecmo_high_lymphocyte_count = "ECMO initiation lymphocytic count",
+                      ecmo_discont_LDH = "ECMO discontinuation LDH",
+                      ecmo_discont_CRP = "ECMO discontinuation CRP",
+                      ecmo_discont_d_dimer = "ECMO discontinuation D-Dimer",
+                      ecmo_discont_ferritin = "ECMO discontinuation ferritin",
+                      ecmo_discont_il_6 = "ECMO discontinuation IL-6",
+                      ecmo_discont_fibrinogen = "ECMO discontinuation fibrinogen",
+                      ecmo_discont_WBC = "ECMO discontinuation WBC",
+                      ecmo_discont_lymphocyte_count = "ECMO discontinuation lymphocytic count",
+                      
+                      complication_stroke="Stroke")
+
+formula <- as.formula(paste0("complication_stroke ~", paste0(vars, collapse="+")))
+
+tab7 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab7, title="Characteristics of ECMO support")
