@@ -10,7 +10,7 @@ library(UpSetR)
 
 # date of this data
 rm(list=ls())
-data_date <- '2021-09-02'
+data_date <- '2021-09-24'
 admin_censor_date = as.Date(data_date, format='%Y-%m-%d') # using date of data update
 folder = paste0("R:/data_deidentified/v1.0.0_",data_date)
 pfile = paste(folder, '/patients.csv', sep='')
@@ -172,12 +172,12 @@ patients$complication_stroke[patients$complication_stroke != 1 &
 
 patients <- patients %>% mutate(
   stroke_group2 = case_when(
-    stroke_during_treatment_type_ischemic_stroke==1 ~ 'Ischemic stroke',
-    stroke_during_treatment_type_hypoxic_ischemic_brain_injury==1 ~ 'Hypoxic ischemic brain injury',
     stroke_during_treatment_type_intraparenchymal_haemorrhage==1 ~ 'Intraparenchymal haemorrhage',
     stroke_during_treatment_type_subarachnoid_haemorrhage==1 ~ 'Subarachnoid haemorrhage',
+    stroke_during_treatment_type_ischemic_stroke==1 ~ 'Ischemic stroke',
+    stroke_during_treatment_type_hypoxic_ischemic_brain_injury==1 ~ 'Hypoxic ischemic brain injury',
     stroke_during_treatment_type_cerebral_venous_sinus_thrombosis==1 ~ 'Cerebral venous sinus thrombosis',
-    stroke_during_treatment_type_other==1 ~ 'Undetermined type',
+    stroke_during_treatment_type_other==1 | complication_stroke == 1 ~ 'Undetermined type',
     stroke_during_treatment_type_unknown==1 ~ 'Unknown'
   ),
   stroke_group3 = case_when(
@@ -188,7 +188,9 @@ patients <- patients %>% mutate(
   )  #check if there is a subdural haemorrhage in future - would be ICH
 )
 
-
+##15/9/2021 one patient had both SH and hypoxic ischemic brain injury, allocate to ICH
+table( patients$stroke_during_treatment_type_hypoxic_ischemic_brain_injury, 
+       patients$stroke_during_treatment_type_subarachnoid_haemorrhage, useNA = "always")
 table(patients$stroke_group2, patients$stroke_group3, useNA="always")
 
 ## make new stroke type variable into list (August 2020) - CRF instructions: "please select up to two (2) options"
@@ -270,20 +272,22 @@ daily <- daily %>%
   mutate(date_daily = as.Date(date_daily)) %>%
   select(pin, day, date_daily, in_icu, mean_arterial_pressure, compliance_respiratory_system,
          wbc, pa_co2, serum_creatinine, sodium, potassium, crp, fibrinogen, 
-         troponin_i, haemoglobin, il_6,
+         troponin_i, haemoglobin, il_6, d_dimer,
          glucose, neutrophil_count, lymphocyte_count,
-         # 
+         ldh, ferritin,
          'glasgow_coma_score','avpu',
          'prone_positioning',
+         contains("respiratory_rate"),
          'ecmo',  #ecmo_type is in patients dataframe
          platelet_count, 'p_h', "aptt", "aptr", "aptt_aptr", "inr", 
          alt_sgpt, "ast_sgot", 'bilirubin','d_dimer',
          'blood_urea_nitrogen', 'hco3', 'pa_co2','pa_o2', 'pa_o2_fi_o2', 'fi_o2',
+         lactate,
          'eotd_anticoagulants', "eotd_anticoagulants_type",
          "eotd_haemorrhagic_complication", # 4.52 Haemorrhagic Complication 1
          'eotd_haemorrhagic_complication_source', # 4.53 Source Of Haemorrhagic Complication 1
          'eotd_peep','eotd_tidal_volume','eotd_ventilatory_mode',
-         'eotd_fi_o2','eotd_respiratory_rate',
+         'eotd_fi_o2','eotd_respiratory_rate','eotd_ecmo_circuit_change',
          'eotd_tidal_volume_ideal','eotd_peep','eotd_airway_plateau_pressure',
          'tracheostomy_inserted',
          #
@@ -415,6 +419,15 @@ date_check_daily <- daily %>%
 
 fn1 = paste0("Data/Checks/patient date checks ",data_date,".csv")
 fn2 = paste0("Data/Checks/daily date checks ",data_date,".csv")
+
+
+check <- patients %>% 
+  filter(stroke_during_treatment_type_other=="Yes" 
+         | stroke_during_treatment_type_unknown =="Yes") %>% 
+  select(pin, stroke_during_treatment_type_other, stroke_during_treatment_type_unknown,
+         any_ecmo)
+
+write.csv(check, file="Data/Checks/Missing stroke type.csv", na="", row.names=F)
 
 # write.csv(date_check, file=fn1,na='', row.names = F)
 # write.csv(date_check_daily, file=fn2,na='', row.names = F)

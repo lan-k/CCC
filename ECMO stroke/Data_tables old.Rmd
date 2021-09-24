@@ -1,0 +1,149 @@
+---
+title: "Data mockups"
+author: "Lan Kelly"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:   
+  word_document: 
+  reference_docx: rmarkdown-styles-SAP.docx
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
+error=FALSE, comment='', dpi=400)
+options(knitr.kable.NA = '')
+options(width=1000) # Wide pages
+options(scipen=999) # avoid scientific presentation
+source = 'real_data'
+#source = 'dummy_data'
+source('1_ecmo_ich_data_prep.R') # prepares the data and runs exclusions
+library(visdat)
+library(summarytools)
+library(pander)
+library(naniar)
+library(arsenal)
+```
+
+\newpage
+# Comparison of V-V ECMO patients with and without stroke
+The following tables are based on the document Data Mock Ups_V3.docx.
+
+```{r, results='asis'}
+nstroke_before = nrow(ecmo_patients %>%
+  filter(stroke_after_ECMO == "No"))
+
+ecmo_patients <- ecmo_patients %>% filter(ecmo_type == "Venous-Venous")
+
+library(tableone)
+library(labelled)
+vars <- c('age','sex','ethnicity','country','bmi','apache_ii','sofa','pregnant',
+          "comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension',
+          'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease",
+          'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot',
+          "comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease')
+
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ECMO != "No" | is.na(stroke_after_ECMO)) %>%
+  select(all_of(vars), complication_stroke) %>%
+  set_variable_labels(age =  "Age",sex="Sex",ethnicity="Ethnicity",country='Country',
+                      bmi='BMI',apache_ii='APACHE II',sofa='SOFA',
+                      pregnant='Pregnant',comorbidity_obesity = "Comorbid obesity" ,
+                      comorbidity_immuno='Comorbid immunosuppression',
+                      comorbidity_hypertension='Comorbid hypertension',
+                      comorbidity_diabetes='Comorbid diabetes',
+                      comorbidity_smoking="Comorbid smoking",
+                      comorbidity_chronic_cardiac_disease="Comorbid chronic cardiac disease",
+                      comorbidity_chronic_kidney_disease='Comorbid CKD',
+                      comorbidity_chronic_alcohol_abuse_eot='Comorbid alcohol abuse',
+                      comorbidity_malignant_neoplasm="Comorbid malignant neoplasm",
+                      comorbidity_severe_liver_disease='Comorbid severe liver disease',
+                      complication_stroke="Stroke")
+```
+
+\newpage
+For the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO. 
+
+```{r, results='asis'}
+
+#var_label(tabdata)
+
+#still need RR at time of intubation, time from intubation to ECMO
+cat_vars = c('sex','ethnicity','country','pregnant',
+          "comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension',
+          'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease",
+          'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot',
+          "comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease')
+
+skewvars <- c('age','bmi','apache_ii','sofa')
+
+
+## Create a TableOne object
+tab1 <- CreateTableOne(vars = vars, data = tabdata, factorVars = cat_vars,
+                       includeNA = T,
+                       strata="complication_stroke")
+
+
+kableone(print(tab1,test=F, varLabels=T,pDigits=2, missing = F,
+               caption = "Patient Characteristics")) #nonnormal = skewvars, 
+
+```
+
+\newpage
+### Patients pre V-V ECMO respiratory support characteristics
+
+Pre-ECMO characteristics for the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO.
+
+```{r, results='asis'}
+
+#var_label(tabdata)
+
+#still need static compliance
+
+
+ecmo_vars <-c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "days_icu",'days_hosp', 'days_ecmo','days_vent',
+          'days_sympt_hosp','day',"outcome")
+cat_vars = c('outcome')
+
+skewvars <- c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "days_icu",'days_hosp', 'days_ecmo','days_vent',
+          'days_sympt_hosp','day')
+
+
+tabdata <- ecmo_patients %>%
+  mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+                                      as.character(complication_stroke))) %>%
+  filter(stroke_after_ECMO != "No" | is.na(stroke_after_ECMO)) %>%
+  select(all_of(ecmo_vars), complication_stroke) %>%
+  set_variable_labels(ecmo_highest_fi_o2_6hr_before = "Pre-ECMO FiO2",
+                      ecmo_highest_peep_6hr_before = "Pre-ECMO PEEP",
+                      ecmo_worst_pa_o2_6hr_before = "Pre-ECMO PaO2",
+                      ecmo_worst_pa_co2_6hr_before = "Pre-ECMO PaCO2",
+                      ecmo_prone_before = "Pre-ECMO prone positioning",
+                      ecmo_neuromuscolar_blockage_before = "Pre-ECMO neuromuscular blockade",
+                      days_icu = "Days in ICU",
+                      days_ecmo='Length of the ECMO run',
+                      days_hosp='Hospital length of stay',
+                      days_vent="Days of mechanical ventilation",
+                      days_sympt_hosp="Days from first symptoms to hospitalisation",
+                      day='Day put on ECMO',
+                      outcome='Outcome',
+                      complication_stroke="Stroke")
+
+
+## Create a TableOne object
+tab2 <- CreateTableOne(vars = ecmo_vars, data = tabdata, factorVars = cat_vars,
+                       includeNA = T,
+                       strata="complication_stroke")
+
+
+kableone(print(tab2,test=F,varLabels=T,pDigits=2,  missing = F,
+               caption = "Patients pre-ECMO respiratory support characteristics")) #nonnormal = skewvars,
+
+```
