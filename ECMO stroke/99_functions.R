@@ -82,7 +82,7 @@ blood_gases = function(
     filter(!is.na(date_daily),
            !is.na(after)) # just non missing
   for_table = left_join(to_compare, to_merge_from_daily, by='pin') %>%
-    mutate(diff = as.numeric(date_ecmo - date_daily)) %>%
+    mutate(diff = as.numeric(date_daily - date_ecmo)) %>%
     arrange(pin, diff) %>%
     filter(diff >= 1) %>% # must be at least one day after ECMO date
     group_by(pin) %>%
@@ -1742,6 +1742,33 @@ transform_fp_terms <- function(x.in,p1=1,p2=NULL,shift=0){
   out = out 
   return(out)
 }
+
+
+mymax <- function(x) {
+  
+  defaultW <- getOption("warn")
+  options(warn = -1)
+  m = max(x, na.rm=T)
+  if (all(na.omit(x) %in% 0:1)  & m==0 & sum(is.na(x)) > 0) {m=NA} #return NA for binary variables
+  options(warn = defaultW)
+  if (m %in% c(-Inf, Inf)) {m=NA} 
+  
+  return(m)
+}
+
+
+mymin <- function(x) {
+  
+  defaultW <- getOption("warn")
+  options(warn = -1)
+  m = min(x, na.rm=T)
+  if (all(na.omit(x) %in% 0:1)  & m==0 & sum(is.na(x)) > 0) {m=NA} #return NA for binary variables
+  options(warn = defaultW)
+  if (m %in% c(-Inf, Inf)) {m=NA} 
+  
+  return(m)
+}
+
 
 
 
