@@ -1,0 +1,1134 @@
+---
+title: "Descriptive tables and plots"
+author: "Lan Kelly"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:   
+  word_document: 
+  #reference_docx: rmarkdown-styles-SAP.docx
+  reference_docx: WordStylesReference01.docx
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
+error=FALSE, comment='', dpi=400)
+options(knitr.kable.NA = '')
+options(width=1000) # Wide pages
+options(scipen=999) # avoid scientific presentation
+#source = 'real_data'
+#source = 'dummy_data'
+source('1_ecmo_ich_data_prep.R') # prepares the data and runs exclusions
+library(visdat)
+library(summarytools)
+library(pander)
+library(naniar)
+library(arsenal)
+library(tableone)
+library(labelled)
+library(survminer)
+library(cmprsk)
+
+mycontrols  <- tableby.control(test=FALSE, total=FALSE,
+                               na.action=na.tableby(T),
+                               numeric.stats=c("Nmiss", "median", "q1q3","min","max"),
+                               cat.stats=c("Nmiss","countpct"),
+                               stats.labels=list(Nmiss="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
+
+ecmo_patients <- ecmo_patients %>% 
+    # mutate(complication_stroke=factor(complication_stroke, levels=c("No", "Yes"),
+    #                                 labels=c("Stroke = No", "Stroke = Yes"))) %>%
+  filter(
+      #!is.na(date_ecmo_discontinued),
+         stroke_before_ecmo != "Yes" | is.na(stroke_before_ecmo)) 
+
+fup=21
+
+```
+
+
+The following tables are based on the document Data Mock Ups_V3.docx. The data is from `r data_date`. 
+
+```{r}
+
+miss = ecmo_patients %>% filter(stroke_death == "Missing")
+nmiss = nrow(miss)
+nc_hem = nrow(ecmo_patients %>% filter(stroke_during_treatment_type_cerebral_haemorrhage == "Yes",
+                                       stroke_group=="Other/Unknown"))
+
+stroke_unknown =ecmo_patients %>% filter(stroke_death == "Other stroke",
+                                         stroke_group != "Ischemic") 
+
+```
+
+
+The comparison groups are based on the outcome status for the competing risk analysis. Patients are followed for 90 days after the start of ECMO and depending on which outcome came first, classified into:
+
+- Hemorrhagic stroke
+- Other stroke (Cerebral ischemia or Undetermined)
+- Death (with no stroke recorded)
+- Discharged alive (within 90 days of ECMO)
+- No Stroke (if they had none of the above outcomes within 90 days of ECMO initiation and were alive on the last day of follow-up)
+- Missing (if they had no data entered for stroke AND missing date of death or death occurred after 90 days)
+
+Of the "Other Stroke" patients, `r nrow(stroke_unknown)` had an unknown stroke type, while the remaining had cerebral ischaemia.
+
+**I classified `r nc_hem` patients with other or undetermined stroke, who had cerebral or intracranial hemorrhage recorded as text in complication_other_value, as hemorrhagic stroke.**
+
+
+\newpage 
+# Cumulative Incidence of Stroke or Death
+
+Up to 90 days after ECMO initiation. Most strokes occurred in the first month after ECMO initiation.
+
+
+```{r, results='asis'}
+
+crdata <- ecmo_patients %>% 
+  filter(!is.na(days_fup),
+        !(stroke_death %in% c("No Stroke","Missing") )) %>%
+  mutate(stroke_death=as.character(stroke_death),
+         stroke_death = case_when(stroke_death == "Hemorrhagic stroke" ~ "Hemorrhagic_stroke",
+                                  stroke_death == "Other stroke" ~ "Other_stroke",
+                                  TRUE ~ stroke_death))
+fit <- cuminc(ftime = crdata$days_fup, fstatus = crdata$stroke_death)
+
+ggcompetingrisks(fit, palette = "Dark2",
+                 legend = "top",
+                 ggtheme = theme_bw(),
+                 # multiple_panels = F,
+                 conf.int = T)
+
+
+```
+
+
+\newpage
+# Comparison of V-V ECMO patients by Stroke Type and Death
+
+
+```{r, results='asis'}
+
+# **`r nrow(timechecks %>% filter(any_ecmo == "Yes"))` patients who have implausible dates during their hospital stay have been removed**, including `r nrow(timechecks %>% filter(stroke_before_ecmo == "Yes",any_ecmo == "Yes"))` who appeared to have stroke before ECMO. 
+
+
+
+nstroke_before = nrow(ecmo_patients %>%
+  filter(stroke_after_ecmo == "No"))
+
+#still need RR at time of intubation, time from intubation to ECMO
+ecmo_patients <- ecmo_patients %>% filter(ecmo_type == "Venous-Venous") %>%
+  mutate(ethnicity = ifelse(is.na(ethnicity), "Missing", ethnicity))
+
+
+vars <- c('age','sex','ethnicity'
+          ,'country',"income_group",
+          'bmi','apache_ii','sofa','pregnant'
+          ,"comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension'
+          ,'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease"
+          ,'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot'
+          ,"comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease'
+          )
+
+
+tabdata = ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(vars), stroke_death) %>%  #stroke_group4
+  set_variable_labels(age =  "Age",
+                     sex="Sex",
+                     ethnicity="Ethnicity",
+                     country='Country',
+                     income_group = "Economic Region",
+                     bmi='BMI',apache_ii='APACHE II',sofa='SOFA',
+                     pregnant='Pregnant',
+                     comorbidity_obesity = "Comorbid obesity" ,
+                     comorbidity_immuno='Comorbid immunosuppression',
+                     comorbidity_hypertension='Comorbid hypertension',
+                     comorbidity_diabetes='Comorbid diabetes',
+                     comorbidity_smoking="Comorbid smoking",
+                     comorbidity_chronic_cardiac_disease="Comorbid chronic cardiac disease",
+                     comorbidity_chronic_kidney_disease='Comorbid CKD',
+                     comorbidity_chronic_alcohol_abuse_eot='Comorbid alcohol abuse',
+                     comorbidity_malignant_neoplasm="Comorbid malignant neoplasm",
+                     comorbidity_severe_liver_disease='Comorbid severe liver disease',
+                     stroke_death="Stroke or Death"
+                      )
+
+
+# cat_vars = c('sex','ethnicity','country','pregnant',
+#           "comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension',
+#           'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease",
+#           'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot',
+#           "comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease')
+# 
+# skewvars <- c('age','bmi','apache_ii','sofa')
+
+
+formula <- as.formula(paste0("stroke_death ~", paste0(vars, collapse="+")))
+
+tab1 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab1, title='Patient Characteristics') 
+
+
+## Create a TableOne object
+# tab1 <- CreateTableOne(vars = vars, data = tabdata, factorVars = cat_vars,
+#                        includeNA = T,
+#                        strata="stroke_death")
+
+
+#kableone(print(tab1,test=F, varLabels=T,pDigits=2, missing = F)) #nonnormal = skewvars, 
+
+```
+
+
+For the `r nrow(tabdata)` patient, excluding the `r nstroke_before` patients who had a stroke before ECMO. 
+
+
+\newpage
+### Patients pre V-V ECMO respiratory support characteristics
+
+Pre-ECMO characteristics for the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO.
+
+Outcomes include those that occurred longer than 90 days after ECMo initiation.
+
+Time variables with negative values have been excluded (data entry errors).
+
+```{r, results='asis'}
+
+#var_label(tabdata)
+
+#still need static compliance
+
+
+ecmo_vars <-c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "ecmo_highest_respiratory_rate_6hr_before", "rr_vent",
+         'days_sympt_hosp',"days_icu",'days_hosp', 'days_ecmo',
+         'days_vent','days_vent_ecmo', 'day', 
+         "outcome")
+cat_vars = c('outcome')
+
+skewvars <- c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
+         "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
+         "ecmo_prone_before" ,"ecmo_neuromuscolar_blockage_before",
+         "days_icu",'days_hosp', 'days_ecmo','days_vent',"rr_vent",
+         "ecmo_highest_respiratory_rate_6hr_before",'days_vent_ecmo',
+          'days_sympt_hosp','day')
+
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(ecmo_vars), stroke_death) %>%
+  
+  set_variable_labels(ecmo_highest_fi_o2_6hr_before = "Pre-ECMO FiO2",
+                      ecmo_highest_peep_6hr_before = "Pre-ECMO PEEP",
+                      ecmo_worst_pa_o2_6hr_before = "Pre-ECMO PaO2",
+                      ecmo_worst_pa_co2_6hr_before = "Pre-ECMO PaCO2",
+                      ecmo_prone_before = "Pre-ECMO prone positioning",
+                      ecmo_neuromuscolar_blockage_before = "Pre-ECMO neuromuscular blockade",
+                      ecmo_highest_respiratory_rate_6hr_before = "Highest RR before ECMO (breaths/min)",
+                      rr_vent="Respiratory rate at time of ventilation (breaths/min)",
+                      days_icu = "Days in ICU",
+                      days_ecmo='Length of the ECMO run',
+                      days_hosp='Hospital length of stay',
+                      days_vent="Days of mechanical ventilation",
+                      days_vent_ecmo = "Days from mechanical ventilation to ECMO",
+                      days_sympt_hosp="Days from first symptoms to hospitalisation",
+                      day='Day put on ECMO',
+                      outcome='Outcome',
+                      stroke_death="Stroke or Death")
+
+
+formula <- as.formula(paste0("stroke_death ~", paste0(ecmo_vars, collapse="+")))
+
+tab2 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab2, title='ECMO respiratory support')
+
+
+
+# ## Create a TableOne object
+# tab2 <- CreateTableOne(vars = ecmo_vars, data = tabdata, factorVars = cat_vars,
+#                        includeNA = T,
+#                        strata="stroke_group4")
+# 
+# 
+# kableone(print(tab2,test=F,varLabels=T,pDigits=2,  missing = F,
+#                caption = "Patients pre-ECMO respiratory support characteristics")) #nonnormal = skewvars,
+
+```
+
+
+
+
+\newpage
+### Description of neurological complications
+
+For the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO. A patient could have up to two stroke types.
+
+**Cerebral haemorrhage stroke type was created when "Other" or "Undetermined" stroke type was selected and cerebral or intracranial hemorrhage entered into the "other complications" field **
+
+```{r, results='asis'}
+
+neuro_vars <-c(
+              # "complication_stroke_date", "date_ecmo",
+              # "stroke_after_ecmo",
+               "anticoagulants",
+               "stroke_during_treatment_type_intraparenchymal_haemorrhage",
+                "stroke_during_treatment_type_subarachnoid_haemorrhage",
+                "stroke_during_treatment_type_cerebral_haemorrhage",
+                "stroke_during_treatment_type_ischemic_stroke",
+               "stroke_during_treatment_type_hypoxic_ischemic_brain_injury",
+               "stroke_during_treatment_type_cerebral_venous_sinus_thrombosis"
+                 )
+
+
+
+tabdata = ecmo_patients %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(neuro_vars)) %>%
+  set_variable_labels(
+                      #  complication_stroke_date = "Stroke Date",
+                      #  date_ecmo = "ECMO date",
+                      # stroke_after_ecmo = "Stroke After ECMO",
+                      anticoagulants = "Anticoagulant Use",
+                      stroke_during_treatment_type_intraparenchymal_haemorrhage = 
+                        "Intraparenchymal hemorrhage ",
+                      stroke_during_treatment_type_subarachnoid_haemorrhage = 
+                        "Subarachnoid hemorrhage",
+                      stroke_during_treatment_type_cerebral_haemorrhage = 
+                        "Cerebral hemorrhage",
+                      stroke_during_treatment_type_ischemic_stroke = 
+                        "Ischemic stroke",
+                      stroke_during_treatment_type_hypoxic_ischemic_brain_injury = 
+                        "Hypoxic ischemic brain injury",
+                      stroke_during_treatment_type_cerebral_venous_sinus_thrombosis=
+                        "Cerebral venous sinus thrombosis")
+
+
+
+
+formula <- as.formula(paste0(" ~", paste0(neuro_vars, collapse="+")))
+
+tab3 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab3, title="Neurological complications")
+
+
+
+# ## Create a TableOne object
+# tab3 <- CreateTableOne(vars = neuro_vars, data = tabdata, factorVars = factorvars,
+#                        includeNA = T)
+# 
+# 
+# kableone(print(tab3, test=F, varLabels=T,pDigits=2, missing = F,
+#                caption = "Relevant Complications during ECMO run"))
+
+```
+
+
+
+\newpage
+### Complications during ECMO run
+
+Complications of ECMO for the `r nrow(tabdata)` V-V ECMO patients, excluding the `r nstroke_before` patients who had a stroke before ECMO.
+
+**Please advise how these conditions can be defined using the data:**
+
+* DIC / coagulation disorder 
+* thrombocytopenia
+* lactic acidosis
+
+
+```{r, results='asis'}
+
+complic_vars <-c("complication_cardiac_arrest","complication_bacteraemia",
+                 "complication_viral_pheumonitis","complication_bacterial_pneumonia",
+                 "complication_haemorrhage","complication_anaemia",
+                 "complication_acute_renal_failure","complication_rhabdomyolysis",
+                 "complication_liver_dysfunction" ,"complication_hyperbilirunemia"
+                 )
+
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(complic_vars), stroke_death) %>%
+  set_variable_labels(complication_cardiac_arrest = "Cardiac Arrest",
+                      complication_bacteraemia = "Bacteraemia",
+                      complication_viral_pheumonitis = "Viral pneumonitis",
+                      complication_bacterial_pneumonia = "Bacterial Pneumonia",
+                      complication_haemorrhage = "Haemorrhage",
+                      complication_anaemia = "Anaemia",
+                      complication_acute_renal_failure = "Acute renal failure",
+                      complication_rhabdomyolysis = "Rhabdomyolysis",
+                      complication_liver_dysfunction = "Liver Dysfunction",
+                      complication_hyperbilirunemia = "Hyperbilirunemia",
+                      stroke_death="Stroke or Death")
+
+formula <- as.formula(paste0("stroke_death ~", paste0(complic_vars, collapse="+")))
+
+tab4 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab4, title="Complications during ECMO run")
+
+
+
+# ## Create a TableOne object
+# tab4 <- CreateTableOne(vars = complic_vars, data = tabdata, factorVars = complic_vars,
+#                        includeNA = T,
+#                        strata="stroke_group4")
+# 
+# 
+# kableone(print(tab4, test=F, varLabels=T,pDigits=2, missing = F,
+#                caption = "Relevant Complications during ECMO run"))
+
+```
+
+
+
+
+
+\newpage
+### Characteristics of ECMO support   
+
+This table describes characteristics of the cannula used for ECMO
+
+```{r, results='asis'}
+
+cannula_vars <-c('cannula_lumen',"ecmo_location_cannulation",
+                 'ecmo_drainage_cannula_insertion_site', 
+                 'ecmo_return_cannula_insertion_site',
+                 "ecmo_drainage_cannula_size" ,"ecmo_return_cannula_size",
+                 "ecmo_IJ_cannula_size_DL","ecmo_IJ_cannula_size_SL",
+                 "ecmo_circuit_change")
+
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(cannula_vars), stroke_death) %>%
+  set_variable_labels(cannula_lumen = "Cannulation",
+                      ecmo_location_cannulation = "Cannula location",
+                      ecmo_drainage_cannula_insertion_site = "Drainage Insertion Site",
+                      ecmo_return_cannula_insertion_site = "Return Insertion Site",
+                      ecmo_drainage_cannula_size = "Drainage Cannula Size",
+                      ecmo_return_cannula_size = "Return Cannula Size",
+                      ecmo_IJ_cannula_size_DL = "DL IJ Cannula Size",
+                      ecmo_IJ_cannula_size_SL = "SL IJ Cannula Size",
+                      ecmo_circuit_change = "Circuit change",
+                      stroke_death="Stroke or Death")
+
+formula <- as.formula(paste0("stroke_death ~", paste0(cannula_vars, collapse="+")))
+
+tab5 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab5, title="Characteristics of ECMO support")
+```
+
+
+\newpage
+### Arterial blood gases trends around ECMO initiation
+
+
+**Values of delta O2 or CO2 > 200 or < -150 have been excluded.**
+
+
+```{r, results='asis'}
+
+##STILL NEED TO ADD change in O2 and CO2
+gas_vars <-c('ecmo_worst_arterial_p_h_6hr_before',
+             "ecmo_worst_pa_o2_6hr_before",
+                 'ecmo_worst_pa_co2_6hr_before', 
+                 'ecmo_start_worst_p_h',
+                 "ecmo_start_worst_pa_o2" ,"ecmo_start_worst_pa_co2",
+                 "delta_o2","delta_co2",
+                 "ecmo_discont_p_h","ecmo_discont_pa_o2","ecmo_discont_pa_co2")
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(gas_vars), stroke_death) %>%
+  set_variable_labels(ecmo_worst_arterial_p_h_6hr_before = "Pre-ECMO pH",
+                      ecmo_worst_pa_o2_6hr_before = "Pre-ECMO PaO2",
+                      ecmo_worst_pa_co2_6hr_before = "Pre-ECMO PaCO2",
+                      ecmo_start_worst_p_h = "ECMO initiation pH",
+                      ecmo_start_worst_pa_o2 = "ECMO initiation PaO2",
+                      ecmo_start_worst_pa_co2 = "ECMO initiation PaCO2",
+                      delta_o2 = "Delta PaO2 (48h post ECMO - initiation)",
+                      delta_co2 = "Delta CO2 (48h post ECMO - initiation)",
+                      ecmo_discont_p_h = "pH after ECMO discontinuation",
+                      ecmo_discont_pa_o2 = "PaO2 after ECMO discontinuation",
+                      ecmo_discont_pa_co2 = "PaCO2 after ECMO discontinuation",
+                      stroke_death="Stroke or Death")
+
+formula <- as.formula(paste0("stroke_death ~", paste0(gas_vars, collapse="+")))
+
+tab6 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab6, title="Arterial blood gases")
+
+```
+
+\newpage
+### Inflammatory and coagulation markers trends around ECMO initiation
+
+```{r, results='asis'}
+
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(contains("pre_ecmo_high"),
+         contains("ecmo_high_"),
+         contains("ecmo_discont_"),
+         stroke_death) %>%
+  select(!c("ecmo_discont_p_h","ecmo_discont_pa_o2","ecmo_discont_pa_co2",
+            "ecmo_high_aptt","ecmo_high_inr"))
+          
+
+vars <-names(tabdata %>% select(!stroke_death))
+
+
+tabdata <- tabdata    %>%
+  set_variable_labels(pre_ecmo_high_LDH = "Pre ECMO highest LDH (ukat/L)",
+                      pre_ecmo_high_CRP = "Pre ECMO highest CRP (mg/L)",
+                      pre_ecmo_high_d_dimer = "Pre ECMO highest D-Dimer (mg/L)",
+                      pre_ecmo_high_ferritin = "Pre ECMO highest ferritin (nmol/L)",
+                      pre_ecmo_high_il_6 = "Pre ECMO highest IL-6 (ng/L)",
+                      pre_ecmo_high_fibrinogen = "Pre ECMO highest fibrinogen (mg/dL)",
+                      pre_ecmo_high_WBC = "Pre ECMO highest WBC (x 10^9/L)",
+                      pre_ecmo_high_lymphocyte_count = "Pre ECMO highest lymphocytic count (x 10^9/L)",
+                      ecmo_high_LDH = "ECMO initiation LDH (ukat/L)",
+                      ecmo_high_CRP = "ECMO initiation CRP (mg/L)",
+                      ecmo_high_d_dimer = "ECMO initiation D-Dimer (mg/L)",
+                      ecmo_high_ferritin = "ECMO initiation ferritin (nmol/L)",
+                      ecmo_high_il_6 = "ECMO initiation IL-6 (ng/L)",
+                      ecmo_high_fibrinogen = "ECMO initiation fibrinogen (mg/dL)",
+                      ecmo_high_WBC = "ECMO initiation WBC (x 10^9/L)",
+                      ecmo_high_lymphocyte_count = "ECMO initiation lymphocytic count (x 10^9/L)",
+                      ecmo_discont_LDH = "ECMO discontinuation LDH (ukat/L)",
+                      ecmo_discont_CRP = "ECMO discontinuation CRP (mg/L)",
+                      ecmo_discont_d_dimer = "ECMO discontinuation D-Dimer mg/L",
+                      ecmo_discont_ferritin = "ECMO discontinuation ferritin (nmol/L)",
+                      ecmo_discont_il_6 = "ECMO discontinuation IL-6 (ng/L)",
+                      ecmo_discont_fibrinogen = "ECMO discontinuation fibrinogen (mg/dL)",
+                      ecmo_discont_WBC = "ECMO discontinuation WBC (x 10^9/L)",
+                      ecmo_discont_lymphocyte_count = "ECMO discontinuation lymphocytic count (x 10^9/L)",
+                      
+                      stroke_death="Stroke or Death")
+
+formula <- as.formula(paste0("stroke_death ~", paste0(vars, collapse="+")))
+
+tab7 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab7, title="Characteristics of ECMO support")
+```
+
+\newpage
+### Frequency of stroke during ECMO by year of pandemic
+
+```{r, results='asis'}
+
+
+date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
+date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
+date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
+date4 <- as.Date("2021-09-30", format="%Y-%m-%d")
+
+ecmo_patients <- ecmo_patients %>%
+  mutate(era=case_when(as.numeric(date_admission - date1) >= 0 & 
+                       as.numeric(date2 - date_admission) >= 0 ~ "Jan-Jun 2020",
+                       as.numeric(date_admission - date2) > 0 & 
+                       as.numeric(date3 - date_admission) >= 0  
+                       ~ "Jul-Dec 2020",
+                       as.numeric(date_admission - date3) > 0 & 
+                       as.numeric(date4 - date_admission) >= 0  
+                       ~ "Jan-Oct 2021"
+                         ),
+         era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Oct 2021")))
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(era,
+         stroke_death) %>%
+  set_variable_labels(era = "Pandemic era", 
+                      stroke_death="Stroke")
+
+
+formula <- as.formula("stroke_death ~ era")
+
+tab8 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab8, title="Stroke by pandemic era")
+
+```
+
+\newpage
+# Plots
+
+
+**Are any values implausible i.e. possible data entry errors?**
+
+## (a)  Delta O2
+
+If no value was recorded 48 hours after ECMO, 24 hours was used.
+
+```{r}
+
+plot_delta <- function(before_var, after_var, ylabel) {
+  
+  ecmo_patients$before = select(ecmo_patients, before_var)[,1]
+  ecmo_patients$after = select(ecmo_patients, after_var)[,1]
+  
+  
+  to_compare = filter(ecmo_patients, 
+                      !is.na(before), # must have reading and ECMO data
+                      !is.na(date_ecmo),
+           !          is.na(after)) %>%
+    select(pin,  date_ecmo, before, pin, after)
+  
+  # data for plot
+  to_plot = gather(to_compare, `before`, `after`, key='time', value='result') %>%
+    mutate(xaxis = ifelse(str_detect(string=time, 'before'), 1, 2),
+           xaxis = factor(xaxis, levels=1:2, labels=c('Worst before ECMO','24-48 h after ECMO')))
+  
+  # data for average change line
+  av_line = group_by(to_plot, xaxis) %>%
+    summarise(result = mean(result)) %>%
+    mutate(pin = -99) %>%
+    ungroup()
+  
+  
+  p =  to_plot %>%
+    ggplot( aes(x=xaxis, y=result, group=pin))+
+  geom_line(col=grey(0.4))+
+  geom_line(data=av_line, aes(x=xaxis, y=result, group=pin), col='dark red')+ # add average
+  theme_bw()+
+  scale_x_discrete(expand = c(0.05,0.05)) + # reduce white space
+  xlab('')+
+  ylab(ylabel)+
+  scale_y_log10()
+  
+  
+return(p)
+
+  
+}
+lplot <- plot_delta("ecmo_worst_pa_o2_6hr_before","ecmo_48_pa_o2",'PaO2 (log scale)')
+lplot
+
+
+
+
+  
+  
+  
+
+```
+
+Spaghetti plot of PaO2 at ECMO initiation and after 24-48 hours.
+
+**Which changes show outliers?**
+
+
+
+```{r}
+vplot = ggplot(data=ecmo_patients, aes(x=stroke_death, y=delta_o2, fill=stroke_death)) +
+  geom_boxplot()+
+  geom_violin(alpha=0.5)+
+  g.theme+
+  xlab(' ')+
+  ylab('Delta O2')+
+  scale_fill_manual('Stroke
+                    ', values=cbPalette) +
+  #theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+vplot
+```
+
+
+Violin plot of Delta O2, or change in PaO2 from 24 hours before to 48 hours after ECMO initiation. 
+
+**Values > 200 or < -150 have been excluded.**
+
+
+## (b)  Delta CO2
+
+If no value was recorded 48 hours after ECMO, 24 hours was used.
+
+```{r}
+lplot <- plot_delta("ecmo_worst_pa_co2_6hr_before","ecmo_48_pa_co2",'PaCO2 (log scale)')
+lplot
+```
+
+
+Spaghetti plot of PaCO2 at ECMO initiation and after 24-48 hours.
+
+**Which changes show outliers?**
+
+
+```{r}
+vplot = ggplot(data=ecmo_patients, aes(x=stroke_death, y=delta_co2, fill=stroke_death)) +
+  geom_boxplot()+
+  geom_violin(alpha=0.5)+
+  g.theme+
+  xlab(' ')+
+  ylab('Delta CO2')+
+  scale_fill_manual('Stroke
+                    ', values=cbPalette) +
+  #theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+vplot
+```
+
+
+Violin plot of Delta CO2, or change in PaCO2 from 24 hours before to 48 hours after ECMO initiation. 
+
+**Values > 200 or < -150 have been excluded.**
+
+\newpage
+### Blood gases before and after ECMO
+
+#### a) PaO2
+
+Values of PaO2 < 40 after ECMO cannulation have been removed (assuming data entry error).
+
+**Are the values > 300 before ECMO plausible?**
+
+```{r, results='asis'}
+pa_o2_data = blood_gases(before_var='ecmo_worst_pa_o2_6hr_before',
+                         after_var = 'pa_o2',
+                          etype="Venous-Venous") # from 99_functions.R
+lplot = ggplot(data=pa_o2_data$to_plot, aes(x=xaxis, y=result, group=pin))+
+  geom_line(col=grey(0.4))+
+  geom_line(data=pa_o2_data$av_line, aes(x=xaxis, y=result, group=pin), col='dark red')+ # add average
+  theme_bw()+
+  scale_x_discrete(expand = c(0.05,0.05)) + # reduce white space
+  xlab('')+
+  ylab('PaO2 (log scale)')+
+  scale_y_log10()
+lplot
+```
+
+Here we examine the trends in PaO2 from 6 hours before V-V ECMO initiation to the first PaO2 in the period after ECMO initiation. 
+
+The line plot shows the individual change in PaO2 for `r length(unique(pa_o2_data$to_plot$pin))` patients with available blood gas data and ECMO dates. The y-axis is on a log-scale because of the positive skew in PaO2. The red lines shows the average difference between the two times.
+
+The mean percentage change between the worst before reading and first reading after ECMO was `r roundz(pa_o2_data$test$pdiff, 1)` with a 95% confidence interval from `r roundz(pa_o2_data$test$conf.int[1], 1)` to `r roundz(pa_o2_data$test$conf.int[2], 1)` and p-value `r format.pval(pa_o2_data$test$p.value, eps=0.001, digits=3)` (using a paired t-test with log-transformed data).
+
+\newpage
+#### b) PaCO2
+
+Values of PaCO2 < 10 before ECMO cannulation have been removed (assuming data entry error)
+
+```{r, results='asis'}
+pa_co2_data = blood_gases(
+                          before_var='ecmo_worst_pa_co2_6hr_before',
+                          after_var = 'pa_co2',
+                          etype="Venous-Venous") # from 99_functions.R
+lplot = ggplot(pa_co2_data$to_plot, aes(x=xaxis, y=result, group=pin))+
+  geom_line(col=grey(0.4))+
+  geom_line(data=pa_co2_data$av_line, aes(x=xaxis, y=result, group=pin), col='dark red')+ # add average
+  scale_x_discrete(expand = c(0.05,0.05)) + # reduce white space
+  theme_bw()+
+  xlab('')+
+  ylab('PaCO2 (log-scale)')+
+  scale_y_log10()
+lplot
+```
+
+Here we examine the trends in PaCO2 from 6 hours before V-V ECMO initiation to the first PaCO2 in the period after ECMO initiation.
+
+The line plot shows the individual change in PaCO2 for `r length(unique(pa_o2_data$to_plot$pin))` patients with available blood gas data and ECMO dates. The y-axis is on a log-scale because of the positive skew in PaCO2.
+
+The mean percentage change between the worst before reading and first reading after ECMO was `r roundz(pa_co2_data$test$pdiff, 1)` with a 95% confidence interval from `r roundz(pa_co2_data$test$conf.int[1], 1)` to `r roundz(pa_co2_data$test$conf.int[2], 1)` and p-value `r format.pval(pa_co2_data$test$p.value, eps=0.001, digits=3)` (using a paired t-test with log-transformed data).
+
+
+\newpage
+#### c) FiO2
+
+
+Values of FiO2 < 20 before ECMO cannulation have been removed (assuming data entry error).
+
+```{r, results='asis'}
+fi_o2_data = blood_gases(
+                          before_var='ecmo_highest_fi_o2_6hr_before',
+                          after_var = 'fi_o2',
+                          etype="Venous-Venous") # from 99_functions.R
+
+lplot =  ggplot(fi_o2_data$to_plot, aes(x=xaxis, y=result, group=pin))+
+  geom_line(col=grey(0.4))+
+  geom_line(data=fi_o2_data$av_line, aes(x=xaxis, y=result, group=pin), col='dark red')+ # add average
+  scale_x_discrete(expand = c(0.05,0.05)) + # reduce white space
+  theme_bw()+
+  xlab('')+
+  ylab('FiO2 (log-scale)')+
+  scale_y_log10()
+lplot
+```
+
+Here we examine the trends in FiO2 from 6 hours before V-V ECMO initiation to the first FiO2 in the period after ECMO initiation.
+
+The line plot shows the individual change in FiO2 for `r length(unique(fi_o2_data$to_plot$pin))` patients with available blood gas data and ECMO dates. The y-axis is on a log-scale because of the positive skew in FiO2.
+
+The mean percentage change between the worst before reading and first reading after ECMO was `r roundz(fi_o2_data$test$pdiff, 1)` with a 95% confidence interval from `r roundz(fi_o2_data$test$conf.int[1], 1)` to `r roundz(fi_o2_data$test$conf.int[2], 1)` and p-value `r format.pval(fi_o2_data$test$p.value, eps=0.001, digits=3)` (using a paired t-test with log-transformed data).
+
+
+\newpage
+#### d) PaO2/FiO2
+
+**Are the values > 300 before ECMO plausible?**
+
+```{r, results='asis'}
+pa_fi_o2_data = blood_gases(
+                          before_var='ecmo_worst_pa_o2_fi_o2_day_before',
+                          after_var = 'pa_o2_fi_o2',
+                          etype="Venous-Venous") # from 99_functions.R
+
+lplot =  ggplot(pa_fi_o2_data$to_plot, aes(x=xaxis, y=result, group=pin))+
+  geom_line(col=grey(0.4))+
+  geom_line(data=pa_fi_o2_data$av_line, aes(x=xaxis, y=result, group=pin), col='dark red')+ # add average
+  scale_x_discrete(expand = c(0.05,0.05)) + # reduce white space
+  theme_bw()+
+  xlab('')+
+  ylab('PaO2/FiO2 (log-scale)')+
+  scale_y_log10()
+lplot
+```
+
+Here we examine the trends in PaO2/FiO2 from the day before before V-V ECMO initiation to the first PaO2/FiO2 in the period after ECMO initiation.
+
+The line plot shows the individual change in PaO2/FiO2 for `r length(unique(pa_fi_o2_data$to_plot$pin))` patients with available blood gas data and ECMO dates. The y-axis is on a log-scale because of the positive skew in PaO2/FiO2.
+
+The mean percentage change between the worst before reading and first reading after ECMO was `r roundz(pa_fi_o2_data$test$pdiff, 1)` with a 95% confidence interval from `r roundz(pa_fi_o2_data$test$conf.int[1], 1)` to `r roundz(pa_fi_o2_data$test$conf.int[2], 1)` and p-value `r format.pval(pa_fi_o2_data$test$p.value, eps=0.001, digits=3)` (using a paired t-test with log-transformed data).
+
+
+\newpage
+
+# Values collected during ECMO initiation
+
+```{r, include=FALSE}
+# data to plot, must have dates
+combined_ecmo <- combined_ecmo %>% filter(ecmo_type == "Venous-Venous")
+
+to_plot = filter(combined_ecmo, 
+                 !is.na(date_ecmo),
+                 !is.na(date_daily),
+                 !is.na(complication_stroke)) %>%
+  mutate(day = as.numeric(date_daily - date_ecmo)) %>%
+  filter(day <= fup & day >= 0) # exclude long stays for the plot
+
+
+to_plot = mutate(to_plot, facet = paste("Stroke = ", complication_stroke, sep='')) # nice facet
+
+z = qnorm(0.975)
+
+
+boxplot_over_time <- function(var, ylabel) {
+  
+  p <- to_plot %>%
+    ggplot(aes(x=factor(day), y={{var}}, col=factor(facet)))+ 
+  geom_boxplot()+
+  xlab('Day after ECMO initiation')+
+  ylab(ylabel)+
+  scale_color_manual('Stroke', values=c('darkorange1','cyan4'))+ #'Any ECMO',,'cyan4'
+  facet_wrap(~facet, scales='fixed', nrow=2) +
+  g.theme +
+  theme(legend.position = "none")
+  
+  return(p)
+  
+}
+
+means_over_time <- function(var, ylabel, log=T) {
+  
+  if (log) {
+    to_stat = group_by(to_plot, day, facet) %>%
+      summarise(mean = mean(log({{var}}), na.rm = TRUE),
+                se = sem(log({{var}}), na.rm = TRUE)) %>%  
+      ungroup() %>%
+      mutate(lower = exp(mean - (z*se)),
+             upper = exp(mean + (z*se)),
+             mean=exp(mean)
+         #day = ifelse(any_ecmo=='Yes', day+0.2, day)
+         ) # jitter x slightly to avoid overlap
+    
+  } else {
+    to_stat = group_by(to_plot, day, facet) %>%
+      summarise(mean = mean({{var}}, na.rm = TRUE),
+            se = sem({{var}}, na.rm = TRUE)) %>%  #sem
+      ungroup() %>%
+      mutate(lower = mean - (z*se),
+         upper = mean + (z*se)
+         ) 
+    
+  }
+  
+p <-to_stat %>%
+  ggplot(aes(x=day, y=mean, ymin=lower, ymax=upper, col=factor(facet)))+
+  geom_point()+
+  geom_errorbar(width=0)+
+  xlab('Day after ECMO initiation')+
+  ylab(ylabel)+
+  facet_wrap(~facet, scales='fixed', nrow=2) +
+  scale_color_manual('Stroke', values=c('darkorange1','cyan4'))+ #'Any ECMO', ,'cyan4'
+  g.theme +
+  theme(legend.position = "none")
+
+return(p)
+  
+}
+
+```
+
+The plots below are limited to the first `r fup` days after ECMO initiation for V-V ECMO patients only. Patients with missing stroke data or missing dates have been excluded.
+
+**Stroke = “Yes” includes any stroke type.**
+
+\newpage
+## Platelet count
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+
+tplot = boxplot_over_time(platelet_count, 'Platelet count')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+
+tplot = means_over_time(platelet_count, 'Platelet count',log=F)
+
+tplot
+```
+
+
+
+\newpage
+## INR
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(inr, 'INR')
+tplot
+```
+
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(inr, 'INR', log=F)
+tplot
+```
+
+
+
+\newpage
+## APTT
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(aptt, 'APTT')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(aptt, 'APTT', log=T)
+tplot
+```
+
+
+
+
+\newpage
+## D-dimer
+
+##### Boxplot over time
+
+**Are the values > 10,000 plausible?**
+
+```{r, fig.width=8}
+
+
+tplot = boxplot_over_time(d_dimer, 'D-dimer')
+
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+
+tplot = means_over_time(d_dimer, 'D-dimer', log=T)
+tplot
+```
+
+
+
+
+\newpage
+## IL-6
+
+##### Boxplot over time
+
+**Are the values > 10,000 plausible?**
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(il_6, 'IL-6')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(il_6, 'IL-6', log=T)
+tplot
+```
+
+
+
+\newpage
+## PaO2/FiO2
+
+**Are the values > 500 plausible?**
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
+tplot
+```
+
+
+
+
+\newpage
+# Forest plots for stroke
+
+Forest plots of odds ratios for any type of stroke (Yes vs No) for binary risk factors. Patients with missing stroke data have been excluded.
+
+
+```{r}
+library(epitools)
+library(forestplot)
+
+
+to_stat <- ecmo_patients %>%
+  filter(!is.na(complication_stroke)) %>%
+  mutate(ethnic_white = ifelse(ethnicity == "white", "Yes", "No"),
+         income_region = relevel(factor(ifelse(income_group == "High income",
+                                               "High Income","Middle Income")),
+                                        ref="Middle Income"),
+         sex=relevel(factor(sex), ref="Female"),
+         age50=factor(as.integer(age > 50)),
+         current_smoker = relevel(factor(case_when(comorbidity_smoking== "Current Smoker" ~ "Yes",
+                                    !is.na(comorbidity_smoking) ~ "No")),ref="No"),
+         ever_smoker = relevel(factor(case_when(comorbidity_smoking %in% c("Current Smoker",
+                                                            "Former Smoker") ~ "Yes",
+                                    !is.na(comorbidity_smoking) ~ "No")),ref="No"),
+         pregnant = ifelse(pregnant %in% c("Missing","Unknown"), NA_character_,pregnant),
+         ac_before_during = case_when(anticoagulants %in% c("None","AC after ECMO only")  ~ "No",
+                            !is.na(anticoagulants)   ~ "Yes"),
+         era1_0 = if_else(era =="Jan-Jun 2020",0 , 1),
+         era2_1 = if_else(era !="Jan-Oct 2021", 0, 1))
+
+n_stroke = sum(to_stat$stroke)
+
+##for two categories only
+or_stroke <- function(x){
+  or <- oddsratio(x, to_stat$stroke)
+  p <- or$p.value[2,2]  #fisher's exact
+  return(or$measure[2,])  #the second category
+}
+
+vars <- c(
+          'age50',
+          'sex','ethnic_white'
+          ,"income_region"
+          ,'pregnant'
+          ,"current_smoker", "ever_smoker"
+           ,"comorbidity_obesity" ,'comorbidity_hypertension'
+           ,'comorbidity_diabetes',"comorbidity_chronic_cardiac_disease"
+          ,"ac_before_during",
+          "era1_0","era2_1"
+          )
+orlist = as.vector(names(to_stat %>% select(all_of(vars))))
+b <-as.data.frame(lapply(to_stat[orlist],  FUN=or_stroke)) 
+
+
+mean <- pivot_longer(b[1,], cols = everything(), values_to="mean", names_to = "Variable")
+lower <- pivot_longer(b[2,], cols = everything(), values_to="lower", names_to = "Variable")
+upper <- pivot_longer(b[3,], cols = everything(), values_to="upper", names_to = "Variable")
+
+
+
+or_df <- bind_cols(mean, lower[,2], upper[,2]) %>%
+  mutate(Variable=case_when(Variable == "age50" ~"Age over 50 vs 50 or under",
+                            Variable == "sex" ~"Male vs Female",
+                            Variable == "ethnic_white" ~"White Ethnicity Yes vs No",
+                            Variable == "current_smoker" ~"Current Smoker Yes vs No",
+                            Variable == "ever_smoker" ~"Ever Smoker Yes vs No",
+                            Variable == "income_region" ~"High vs Middle Income Region",
+                            Variable == "pregnant" ~"Pregnant Yes vs No",
+                            Variable == "comorbidity_obesity" ~"Obese Yes vs No",
+                            Variable == "comorbidity_diabetes" ~"Co-morbid Diabetes Yes vs No",
+                            Variable == "comorbidity_hypertension" ~"Co-morbid Hypertension Yes vs No",
+                            Variable == 
+                              "comorbidity_chronic_cardiac_disease" ~"Co-morbid Cardiac Disease Yes vs No",
+                            Variable =="ac_before_during" ~"Anticoagulant use before or during ECMO Yes vs No",
+                            Variable == "era1_0" ~ "Pandemic era Jul 2020-Oct 2021 vs Jan-Jun 2020",
+                            Variable == "era2_1" ~ "Pandemic era Jan-Oct 2021 vs Jan-Dec 2020"))
+
+##forestplots
+
+or_df %>% forestplot(labeltext = c(Variable), 
+                     summary = T,
+             #clip = c(0.1, 10), 
+             xlog = F, 
+             zero=1,
+             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
+                              ticks = gpar(cex = 1.0),
+                              xlab  = gpar(cex = 0.8)),
+             col = fpColors(box = "royalblue",
+                            line = "darkblue",
+                            summary = "royalblue"),
+             xlab="OR for stroke within 90 days of ECMO"
+             )
+
+```
+
+
+Just for the first `r fup_stroke` days after ECMO initiation.`r n_stroke` patients had any type of stroke within `r fup_stroke` days of ECMO initiation

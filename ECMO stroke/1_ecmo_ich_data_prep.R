@@ -26,12 +26,20 @@ figure_nums <- captioner(prefix = "Figure", levels=2, type = c("n", "c"))
 # graphics things:
 library(diagram)
 library(ggplot2)
+library(janitor)
 theme_set(theme_bw())
 library(ggupset)  # to plot combination of symptoms
 g.theme = theme_bw() + theme(panel.grid.minor = element_blank())
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#999999", "#CC79A7")
 
+
+fup_stroke = 90  ##days of follow-up for stroke study
+
 ## get the data
+WB <- read.csv("data/World_Bank_Income_List.csv", stringsAsFactors = F) %>%
+  janitor::clean_names() %>%
+  select(country, income_group)
+
 load(file='data/COVID_Data_stroke.RData') # from 0_read_data.R  
 # if(source == 'dummy_data'){
 #   load(file='data/COVID_Data_stroke_dummy.RData') # from 0_read_data.R, dummy data
@@ -46,32 +54,9 @@ load(file='data/COVID_Data_stroke.RData') # from 0_read_data.R
 # }
 
 
+patients <- patients %>% left_join(WB, by="country") 
 ##functions to return max and handles NA
 
-mymax <- function(x) {
-  
-  defaultW <- getOption("warn")
-  options(warn = -1)
-  m = max(x, na.rm=T)
-  if (all(na.omit(x) %in% 0:1)  & m==0 & sum(is.na(x)) > 0) {m=NA} #return NA for binary variables
-  options(warn = defaultW)
-  if (m %in% c(-Inf, Inf)) {m=NA} 
-  
-  return(m)
-}
-
-
-mymin <- function(x) {
-  
-  defaultW <- getOption("warn")
-  options(warn = -1)
-  m = min(x, na.rm=T)
-  if (all(na.omit(x) %in% 0:1)  & m==0 & sum(is.na(x)) > 0) {m=NA} #return NA for binary variables
-  options(warn = defaultW)
-  if (m %in% c(-Inf, Inf)) {m=NA} 
-  
-  return(m)
-}
 
   
 # make last possible date based on database freeze
@@ -82,7 +67,8 @@ censor_day = 90 # maximum day for plots and estimates
 ## data edits
 # a) patients
 # slim down variables:
-patients = select(patients, 'pin', 'site_name','country','age', 'sex', 'bmi','ethnicity', 'pregnant',
+patients = select(patients, 'pin', 'site_name','country',income_group,
+                  'age', 'sex', 'bmi','ethnicity', 'pregnant',
                   'diagnosis_coronavirus','diagnosis_coronavirus_type',
                   contains("date"),
                   #' 'date_icu',
@@ -245,7 +231,7 @@ daily = select(daily, pin, date_daily, ecmo, platelet_count, "p_h", "aptt", "inr
                "lymphocyte_count", 'eotd_anticoagulants', "eotd_anticoagulants_type", 'd_dimer', 'aptt_aptr',
                "pa_o2", "pa_co2", 'fi_o2','wbc', 'crp',  'troponin_i','il_6','haemoglobin',
                "eotd_haemorrhagic_complication", "eotd_haemorrhagic_complication_source",
-               'eotd_peep',
+               'eotd_peep','pa_o2_fi_o2',
                #
                'tracheostomy_inserted','neuromuscular_blocking_agents', 'eotd_neuromuscolar_blockage',
                inotropic_support, eotd_vasoactive_drugs
@@ -338,7 +324,7 @@ patients = filter(patients, !pin %in% ex)
 daily = filter(daily, !pin %in% ex)
 
 
-##also remove patients who are still on ECMO
+
 
 
 
@@ -369,9 +355,41 @@ daily = filter(daily, !pin %in% ex)
 ###fix values for blood gases
 daily$pa_o2[daily$pa_o2 < 40] <- NA  #remove outliers -SCM 20/8/2021
 patients$ecmo_worst_pa_co2_6hr_before[patients$ecmo_worst_pa_co2_6hr_before <= 10] <- NA
+patients$ecmo_highest_fi_o2_6hr_before[patients$ecmo_highest_fi_o2_6hr_before <= 20] <- NA
+
+
+
+##fix some outliers
+##assume unit mismatch
+daily <- daily %>%
+  mutate(d_dimer = ifelse(d_dimer > 50000, d_dimer/1000, d_dimer))
+
+
+
 
 # combined
 combined = full_join(patients, daily, by='pin') #%>% unique()
+
+##add variables from daily to patients
+combined_ecmo <- combined %>% 
+  filter(any_ecmo=='Yes') 
+
+
+
+##worst PF-ratio in the day before ECMO
+worst_PF <- combined_ecmo %>%
+  filter(any_ecmo=='Yes') %>%
+  mutate(diff=as.numeric(date_daily - date_ecmo)) %>%
+  filter(diff == -1) %>%
+  group_by(pin) %>%
+  slice_min(diff, n=1) %>%
+  summarise(ecmo_worst_pa_o2_fi_o2_day_before = mymin(pa_o2_fi_o2)) %>%
+  ungroup() %>%
+  select(pin, ecmo_worst_pa_o2_fi_o2_day_before) %>%
+  unique()
+
+patients <- patients %>%
+  left_join(worst_PF, by="pin")
   
 
 
@@ -388,7 +406,8 @@ ecmo_patients <- patients %>%
     days_sympt_hosp = as.numeric(date_admission - date_first_symptom + 0.5),
     day = as.numeric(date_ecmo - date_icu),
     stroke_group4 = case_when(stroke_during_treatment_type_intraparenchymal_haemorrhage=="Yes" |
-                                stroke_during_treatment_type_subarachnoid_haemorrhage=="Yes" ~
+                                stroke_during_treatment_type_subarachnoid_haemorrhage=="Yes" |
+                                stroke_during_treatment_type_cerebral_haemorrhage == "Yes" ~
                                 "Haemorrhagic stroke",
                               stroke_during_treatment_type_ischemic_stroke=="Yes" |
                                 stroke_during_treatment_type_hypoxic_ischemic_brain_injury=="Yes" |
@@ -397,6 +416,14 @@ ecmo_patients <- patients %>%
                                 'Cerebral ischemia/Undetermined',
                               complication_stroke == "No" ~ "No Stroke",
                               TRUE ~ "Unknown/Missing"))
+
+
+##fix negative values
+daylist <- as.vector(names(ecmo_patients %>% select(starts_with("day"))))
+a <-replace_with_na_all(ecmo_patients[daylist], condition = ~.x <0)
+ecmo_patients[daylist] <- a
+
+
 
 daily_ecmo <- daily %>% filter(ecmo==1)
 
@@ -408,10 +435,6 @@ stroke_ecmo <- ecmo_patients %>%
   
 
 
-##ad variables from daily to patients
-combined_ecmo <- combined %>% 
-  filter(any_ecmo=='Yes') 
-
 
 ###CHECK MISSING VALUES
 ecmovars <- combined_ecmo %>%
@@ -422,18 +445,19 @@ ecmovars <- combined_ecmo %>%
          ) %>%
   group_by(pin) %>%
   summarise(
-            ac_before_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants !=1 
+            ac_before_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants ==1 
                                  & date_daily < date_ecmo),
-            ac_during_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants !=1 
+            ac_during_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants ==1 
                                  & date_daily >= date_ecmo & date_daily <= date_ecmo_discontinued),
-            ac_after_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants !=1 
+            ac_after_ecmo = any(!is.na(eotd_anticoagulants) & eotd_anticoagulants ==1 
                                 & date_daily > date_ecmo_discontinued),
             anticoagulants = case_when(
-                          !ac_before_ecmo & !ac_during_ecmo & !ac_after_ecmo ~ "None",
+                          all(is.na(eotd_anticoagulants)) ~ NA_character_,
                           ac_before_ecmo & !ac_during_ecmo & !ac_after_ecmo ~ "AC before ECMO only",
                           ac_before_ecmo & ac_during_ecmo ~ "AC before & during ECMO",
                           !ac_before_ecmo & ac_during_ecmo ~ "AC during but not before ECMO",
-                          !ac_before_ecmo & !ac_during_ecmo & ac_after_ecmo ~ "AC after ECMO only"),
+                          !ac_before_ecmo & !ac_during_ecmo & ac_after_ecmo ~ "AC after ECMO only",
+                          !ac_before_ecmo & !ac_during_ecmo & !ac_after_ecmo ~ "None"),
          rr_vent = mymax(rr_vent),
          ecmo_circuit_change = factor(mymax(eotd_ecmo_circuit_change), 
                                       levels=0:1,labels=c("No","Yes")),
@@ -448,7 +472,7 @@ ecmovars <- combined_ecmo %>%
 
 ##NEED to also create lactic acidosis lactate > 4 mmol/L
 
-##highest values pre_ecmo
+##worst values pre_ecmo
 pre_ecmo <- combined_ecmo %>%
   filter(date_daily < date_ecmo, any_ecmo=='Yes') %>%
   group_by(pin) %>%
@@ -464,7 +488,9 @@ pre_ecmo <- combined_ecmo %>%
   select(pin, contains("pre_ecmo_high")) %>%
   unique()
 
-#highest values at ecmo initiation
+
+
+#worst values at ecmo initiation
 ecmo_24 <- combined_ecmo %>%
   filter(date_daily >= date_ecmo, any_ecmo=='Yes',
          !is.na(date_ecmo)) %>% # must be at least one day after ECMO date
@@ -481,9 +507,12 @@ ecmo_24 <- combined_ecmo %>%
          ecmo_high_fibrinogen=mymax(fibrinogen),
          ecmo_high_WBC=mymax(wbc),
          ecmo_high_lymphocyte_count=mymax(lymphocyte_count),
+         ecmo_high_aptt=mymax(aptt),
+         ecmo_high_inr=mymax(inr),
+         ecmo_start_worst_platelet_count=mymin(platelet_count),
          ecmo_start_worst_p_h = mymin(p_h),
          ecmo_start_worst_pa_o2 = mymin(pa_o2),
-         ecmo_start_worst_pa_co2 = mymin(pa_co2)) %>%
+         ecmo_start_worst_pa_co2 = mymax(pa_co2)) %>%
   ungroup() %>%
   select(pin, matches("ecmo_high_|ecmo_start_worst_"))
 
@@ -492,6 +521,7 @@ ecmo_discont <- combined_ecmo %>%
   filter(date_daily >= date_ecmo_discontinued, any_ecmo=='Yes',
          !is.na(date_ecmo_discontinued)) %>% # must be at least one day after ECMO discontinuation date
   mutate(diff = as.numeric(date_daily - date_ecmo_discontinued )) %>%
+  filter(diff <= 1) %>%
   group_by(pin) %>%
   arrange(pin, diff) %>%
   slice_head(n=1) %>%
@@ -505,13 +535,42 @@ ecmo_discont <- combined_ecmo %>%
          ecmo_discont_lymphocyte_count=mymax(lymphocyte_count),
          ecmo_discont_p_h = mymin(p_h),
          ecmo_discont_pa_o2 = mymin(pa_o2),
-         ecmo_discont_pa_co2 = mymin(pa_co2)) %>%
+         ecmo_discont_pa_co2 = mymax(pa_co2)) %>%
   ungroup() %>%
   select(pin, contains("ecmo_discont_"))
 
 
+ecmo_delta_o2 <- combined_ecmo %>%
+  mutate(diff = as.numeric(date_daily - date_ecmo)) %>%  #want last value to be 48 hours after ECMO started
+  filter( any_ecmo=='Yes',
+          !is.na(pa_o2),
+         !is.na(date_ecmo),
+         diff <= 2, diff > 0) %>% # must be at least one day after ECMO start date
+  group_by(pin) %>%
+  arrange(pin, diff) %>%
+  slice_tail( n=1) %>%  #take the day closest to 48 hours after start
+  ungroup() %>%
+  rename(ecmo_48_pa_o2 = pa_o2) %>%
+  select(pin, ecmo_48_pa_o2)
 
-ecmo_patients <- left_join(ecmo_patients, ecmovars %>% 
+
+ecmo_delta_co2 <- combined_ecmo %>%
+  mutate(diff = as.numeric(date_daily - date_ecmo)) %>%
+  filter( any_ecmo=='Yes',
+          !is.na(pa_co2),
+          !is.na(date_ecmo),
+          diff <= 2, diff > 0) %>% # must be at least one day after ECMO start date
+  group_by(pin) %>%
+  arrange(pin, diff) %>%
+  slice_tail( n=1) %>%  #take the day closest to 48 hours after start
+  ungroup() %>%
+  rename(ecmo_48_pa_co2 = pa_co2) %>%
+  select(pin, ecmo_48_pa_co2)
+
+
+  
+  
+  ecmo_patients <- left_join(ecmo_patients, ecmovars %>% 
                              select(pin, anticoagulants,ecmo_circuit_change,
                                     rr_vent,complication_haemorrhage,
                                     complication_hyperbilirunemia) %>%
@@ -522,6 +581,8 @@ ecmo_patients <- left_join(ecmo_patients, ecmovars %>%
   left_join(pre_ecmo, by="pin") %>%
   left_join(ecmo_24, by="pin") %>%
   left_join(ecmo_discont, by="pin") %>%
+  left_join(ecmo_delta_o2, by="pin") %>%
+  left_join(ecmo_delta_co2, by="pin") %>%
   unique()
  
 
@@ -538,26 +599,74 @@ ecmo_patients <- ecmo_patients %>%
       cannula_lumen == "Single lumen" &
         grepl("internal jugular",ecmo_return_cannula_insertion_site) ~ 
         ecmo_return_cannula_size),
-    
-    delta_o2 = ecmo_start_worst_pa_o2 - ecmo_worst_pa_o2_6hr_before,
-    delta_co2 = ecmo_start_worst_pa_co2 - ecmo_worst_pa_co2_6hr_before)
+    delta_o2 = ecmo_48_pa_o2 - ecmo_worst_pa_o2_6hr_before ,# ecmo_start_worst_pa_o2,
+    delta_co2 = ecmo_48_pa_co2 - ecmo_worst_pa_co2_6hr_before,#ecmo_start_worst_pa_co2,
+    delta_o2 = ifelse(delta_o2 > 200 | delta_o2 < -150, NA, delta_o2),
+    delta_co2 = ifelse(delta_co2 > 200 | delta_co2 < -150, NA, delta_o2)
+    )
 
 
 
-pa_o2_data = blood_gases(before_var='ecmo_worst_pa_o2_6hr_before',
-                         after_var = 'pa_o2',
-                         etype="Venous-Venous")$to_plot
 
-pa_o2_data <- pa_o2_data %>% 
-  group_by(pin) %>%
-  mutate(t = ifelse(time=="before", 0,1)) %>%
-  arrange(t) %>%
-  mutate(delta_o2 = diff(result)) %>%
-  ungroup()
+###outcomes for competing risks
 
-delta_o2 <- pa_o2_data %>%
-  filter(t==1) %>%
-  select(pin, delta_o2)
+ecmo_patients <- ecmo_patients %>%
+  mutate(
+         days_ecmo_death = as.numeric(date_death-date_ecmo),
+         days_ecmo_stroke = as.numeric(complication_stroke_date-date_ecmo),
+         days_ecmo_disch = as.numeric(date_hospital_discharge-date_ecmo),
+         max_days_fup=as.numeric(last_date - date_ecmo),
+         max_days_fup=ifelse(max_days_fup > fup_stroke, fup_stroke, max_days_fup),
+         max_days_fup=ifelse(max_days_fup <=0, NA, max_days_fup),
+         ##remove implausible values
+         days_vent_ecmo = ifelse(days_vent_ecmo < 0 | days_vent_ecmo > 100, NA, days_vent_ecmo),
+         stroke = as.numeric(complication_stroke == "Yes" & days_ecmo_stroke <= fup_stroke),
+         stroke_death = factor(case_when(
+           stroke_group3 == "ICH" ~ "Hemorrhagic stroke",
+           stroke_group3 %in% c("Ischaemic", "Undetermined type") ~ "Other stroke",
+           !is.na(date_death) & is.na(complication_stroke_date) & days_ecmo_death <= fup_stroke
+             & days_ecmo_death <= days_ecmo_disch ~ "Death",
+           is.na(date_death) & is.na(complication_stroke_date) & 
+             days_ecmo_death <= days_ecmo & days_ecmo_death <= fup_stroke ~ "Death",
+           is.na(date_death) & is.na(complication_stroke_date) &  
+             !is.na(complication_stroke) & !is.na(date_discharge) &
+              days_ecmo_disch <= fup_stroke ~ "Discharged",
+           is.na(date_death) & is.na(complication_stroke_date) & 
+             !is.na(complication_stroke) ~ "No Stroke",
+           stroke_group4 == "No Stroke" ~ "No Stroke",
+           TRUE ~ "Missing"),
+           levels=c("Hemorrhagic stroke","Other stroke","Death","Discharged",
+                    "No Stroke","Missing")),
+           #stroke_death=relevel(stroke_death, ref="None"),
+         days_fup=case_when(stroke_death == "Death"  & days_ecmo_death <= fup_stroke ~ days_ecmo_death,
+                            stroke_death %in% c("Hemorrhagic stroke","Other stroke") & 
+                              days_ecmo_stroke <= fup_stroke ~ days_ecmo_stroke,
+                            stroke_death == "None" & days_ecmo_disch <= fup_stroke 
+                            & !is.na(date_hospital_discharge) ~ days_ecmo_disch,
+                            TRUE ~ max_days_fup),
+         days_fup=ifelse(days_fup <=0, NA, days_fup))
+
+
+
+
+# pa_o2_data = blood_gases(before_var='ecmo_worst_pa_o2_6hr_before',
+#                          after_var = 'pa_o2',
+#                          etype="Venous-Venous")$to_plot
+# 
+# pa_o2_data <- pa_o2_data %>% 
+#   group_by(pin) %>%
+#   mutate(t = ifelse(time=="before", 0,1)) %>%
+#   arrange(t) %>%
+#   mutate(delta_o2 = diff(result)) %>%
+#   ungroup()
+# 
+# delta_o2 <- pa_o2_data %>%
+#   filter(t==1) %>%
+#   select(pin, delta_o2)
+
+
+
+
 
 
 stroke <- patients  %>% 

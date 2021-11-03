@@ -10,7 +10,7 @@ library(UpSetR)
 
 # date of this data
 rm(list=ls())
-data_date <- '2021-09-24'
+data_date <- '2021-10-28'
 admin_censor_date = as.Date(data_date, format='%Y-%m-%d') # using date of data update
 folder = paste0("R:/data_deidentified/v1.0.0_",data_date)
 pfile = paste(folder, '/patients.csv', sep='')
@@ -148,6 +148,19 @@ patients$complication_stroke[patients$complication_stroke != 1 &
                                patients$stroke_during_treatment == 1] <- 1
 
 
+##add patients with cerebral hemorrhage in complication_other_value
+
+patients <- patients %>%
+  mutate(stroke_during_treatment_type_cerebral_haemorrhage = as.numeric(
+    (grepl("cerebral",complication_other_value, ignore.case=T) |
+       grepl("intracranial",complication_other_value, ignore.case=T)) & 
+      (grepl("hemorrhage",complication_other_value, ignore.case=T) |  
+         grepl("haemorrhage",complication_other_value, ignore.case=T) |
+         grepl("hemorrage",complication_other_value, ignore.case=T))))
+
+
+
+
 #these are in other complications - put these in subarachnoid stroke?
 # strokelist <- c("ICH with midline shift","Intracerebral bleeding",
 #                 "intracerebral hemorrhage, subarachnoid hemorrhage,·")
@@ -174,30 +187,51 @@ patients <- patients %>% mutate(
   stroke_group2 = case_when(
     stroke_during_treatment_type_intraparenchymal_haemorrhage==1 ~ 'Intraparenchymal haemorrhage',
     stroke_during_treatment_type_subarachnoid_haemorrhage==1 ~ 'Subarachnoid haemorrhage',
+    stroke_during_treatment_type_cerebral_haemorrhage == 1 ~ "Cerebral haemorrhage",
     stroke_during_treatment_type_ischemic_stroke==1 ~ 'Ischemic stroke',
     stroke_during_treatment_type_hypoxic_ischemic_brain_injury==1 ~ 'Hypoxic ischemic brain injury',
     stroke_during_treatment_type_cerebral_venous_sinus_thrombosis==1 ~ 'Cerebral venous sinus thrombosis',
     stroke_during_treatment_type_other==1 | complication_stroke == 1 ~ 'Undetermined type',
-    stroke_during_treatment_type_unknown==1 ~ 'Unknown'
+    stroke_during_treatment_type_unknown==1 | complication_stroke == 2 ~ 'Unknown',
+    complication_stroke == 0 ~ "None"
   ),
   stroke_group3 = case_when(
     stroke_group2 %in% c('Intraparenchymal haemorrhage',
-                         'Subarachnoid haemorrhage') ~ "ICH",
+                         'Subarachnoid haemorrhage',
+                         "Cerebral haemorrhage") ~ "ICH",
     stroke_group2 %in% c('Ischemic stroke','Hypoxic ischemic brain injury') ~ "Ischaemic",
     TRUE ~ stroke_group2
   )  #check if there is a subdural haemorrhage in future - would be ICH
 )
 
-##15/9/2021 one patient had both SH and hypoxic ischemic brain injury, allocate to ICH
+table(patients$stroke_group2, patients$complication_stroke, useNA ="always")
+table(patients$stroke_group2, patients$stroke_group3, useNA ="always")
+
+
+stroke_unknown =patients %>% filter(stroke_group3 %in%  c("Undetermined type","Unknown"))
+with(stroke_unknown , table(complication_other_value, stroke_during_treatment_type_cerebral_haemorrhage,
+                             useNA = "always" ))
+
+
+##21/10/2021 
+# one patient had both SH and hypoxic ischemic brain injury, allocate to ICH
+# two patients had both IPH and hypoxic ischemic brain injury, allocate to ICH
 table( patients$stroke_during_treatment_type_hypoxic_ischemic_brain_injury, 
        patients$stroke_during_treatment_type_subarachnoid_haemorrhage, useNA = "always")
-table(patients$stroke_group2, patients$stroke_group3, useNA="always")
+table( patients$stroke_during_treatment_type_hypoxic_ischemic_brain_injury, 
+       patients$stroke_during_treatment_type_intraparenchymal_haemorrhage, useNA = "always")
+table(patients$stroke_group3, patients$stroke_during_treatment_type_hypoxic_ischemic_brain_injury, 
+      useNA="always")
+
+
+
 
 ## make new stroke type variable into list (August 2020) - CRF instructions: "please select up to two (2) options"
 yes_responses <- dplyr::select(patients, pin, starts_with('stroke_during_treatment_type_'))  %>%
   mutate(stroke_during_treatment_type_ischemic_stroke = ifelse(stroke_during_treatment_type_ischemic_stroke==1, 'Ischemic stroke', ''), # convert 0,1 numbers to characters
          stroke_during_treatment_type_intraparenchymal_haemorrhage = ifelse(stroke_during_treatment_type_intraparenchymal_haemorrhage==1, 'Intraparenchymal haemorrhage', ''),
          stroke_during_treatment_type_subarachnoid_haemorrhage = ifelse(stroke_during_treatment_type_subarachnoid_haemorrhage==1, 'Subarachnoid haemorrhage', ''),
+         stroke_during_treatment_type_cerebral_haemorrhage = ifelse(stroke_during_treatment_type_cerebral_haemorrhage==1, 'Cerebral haemorrhage', ''),
          stroke_during_treatment_type_hypoxic_ischemic_brain_injury = ifelse(stroke_during_treatment_type_hypoxic_ischemic_brain_injury==1, 'Hypoxic ischemic brain injury', ''),
          stroke_during_treatment_type_cerebral_venous_sinus_thrombosis  = ifelse(stroke_during_treatment_type_cerebral_venous_sinus_thrombosis ==1, 'Cerebral venous sinus thrombosis', ''),
          stroke_during_treatment_type_other  = ifelse(stroke_during_treatment_type_other ==1, 'Other', ''),
@@ -272,11 +306,12 @@ daily <- daily %>%
   mutate(date_daily = as.Date(date_daily)) %>%
   select(pin, day, date_daily, in_icu, mean_arterial_pressure, compliance_respiratory_system,
          wbc, pa_co2, serum_creatinine, sodium, potassium, crp, fibrinogen, 
-         troponin_i, haemoglobin, il_6, d_dimer,
+         troponin_i, haemoglobin, il_6, d_dimer,il_6_unit, d_dimer_unit,
          glucose, neutrophil_count, lymphocyte_count,
-         ldh, ferritin,
+         ldh, ferritin,ferritin_unit,
          'glasgow_coma_score','avpu',
          'prone_positioning',
+         
          contains("respiratory_rate"),
          'ecmo',  #ecmo_type is in patients dataframe
          platelet_count, 'p_h', "aptt", "aptr", "aptt_aptr", "inr", 
@@ -427,7 +462,7 @@ check <- patients %>%
   select(pin, stroke_during_treatment_type_other, stroke_during_treatment_type_unknown,
          any_ecmo)
 
-write.csv(check, file="Data/Checks/Missing stroke type.csv", na="", row.names=F)
+#write.csv(check, file="Data/Checks/Missing stroke type.csv", na="", row.names=F)
 
 # write.csv(date_check, file=fn1,na='', row.names = F)
 # write.csv(date_check_daily, file=fn2,na='', row.names = F)
