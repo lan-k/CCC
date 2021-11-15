@@ -10,7 +10,7 @@ library(UpSetR)
 
 # date of this data
 rm(list=ls())
-data_date <- '2021-10-28'
+data_date <- '2021-11-12'
 admin_censor_date = as.Date(data_date, format='%Y-%m-%d') # using date of data update
 folder = paste0("R:/data_deidentified/v1.0.0_",data_date)
 pfile = paste(folder, '/patients.csv', sep='')
@@ -290,6 +290,34 @@ patients = mutate(patients,
                   ethnicity  = ifelse(ethnicity =='', 'Missing', ethnicity ),
                   ethnicity  = ifelse(ethnicity =='notavail', 'Missing', ethnicity ))
 
+
+#updated cause_of_death by combined similar responses
+patients = mutate(patients,
+                  cause_of_death_detailed = cause_of_death, #keep original coding
+                  cause_of_death = case_when(
+                    cause_of_death_detailed=='' ~ 'Missing',
+                    cause_of_death_detailed %in% c('Cerebrovascular accident','Brain injury','Cardiovascular accident') ~ 'Cerebrovascular accident',
+                    cause_of_death_detailed %in% c('Respiratory failure','Respiratory Failure','Hypoxic respiratory failure') ~'Respiratory failure',
+                    cause_of_death_detailed %in% c('Cardiac Failure','Cardiogenic shock') ~ 'Cardiac Failure',
+                    cause_of_death_detailed %in% c('Septic shock','Distributive (Septic) shock') ~ 'Septic shock',
+                    cause_of_death_detailed %in% c('Multi-Organ Failure','Liver Failure') ~ 'Multi-Organ Failure',
+                    cause_of_death_detailed=='Haemorrhagic shock' ~ 'Haemorrhagic shock',
+                    cause_of_death_detailed=='Treatment withdrawn, prognosis poor' ~ 'Treatment withdrawn',
+                    cause_of_death_detailed=='Other' ~ 'Other',
+                    cause_of_death_detailed=='Not Applicable' ~ 'Not Applicable'
+                  ))
+
+
+
+
+#define date of transfer to another facility if applicable
+patients = mutate(patients,
+                  date_transfer = ifelse(outcome=='Transfer',date_outcome,NA), 
+                  date_transfer = as.Date(date_transfer, origin='1970-01-01'))
+
+
+
+
 ## c) read the daily data ##
 daily = read.csv(dfile, stringsAsFactors = FALSE) %>%
   janitor::clean_names() %>%
@@ -301,6 +329,65 @@ daily = read.csv(dfile, stringsAsFactors = FALSE) %>%
 
 names(daily)
 #vis_miss(daily, warn_large_data = F)
+
+# tidy up duplicate variables based on data completion guide
+# CRF guidance - if already recorded in isaric, leave eot blank
+# if in both forms, take isaric value
+daily = mutate(daily,
+               wbc = coalesce(wbc,eotd_wbc),
+               serum_creatinine = coalesce(serum_creatinine,eotd_creatinine),
+               lactate = coalesce(lactate,eotd_lactate),
+               haemoglobin = coalesce(haemoglobin,eotd_haemoglobin),
+               alt_sgpt = coalesce(alt_sgpt,eotd_alt_sgpt),
+               ast_sgot = coalesce(ast_sgot,eotd_ast_sgot),
+               fi_o2 = coalesce(fi_o2,fi_o2b/100),
+               fi_o2 = ifelse(fi_o2<0.21|fi_o2>1,NA,fi_o2), #exclude unusual values before recalculating PF ratio
+               pa_o2_fi_o2 = pa_o2/fi_o2,
+               mean_arterial_pressure = coalesce(mean_arterial_pressure,(2*diastolic_pressure+systolic_pressure)/3), #UPDATED 05-05-21; merge for fi_o2 as proportion or %
+               sa_o2 = 100*sa_o2, #convert oxygen saturation to a %
+               sa_o2 = ifelse(sa_o2<0|sa_o2>100,NA,sa_o2)) %>%
+  select(-eotd_wbc,-eotd_creatinine,-eotd_lactate,-eotd_haemoglobin,-eotd_alt_sgpt,-eotd_ast_sgot)
+
+#combine categories of ventilatory mode
+daily = mutate(daily,
+               eotd_ventilatory_mode=case_when(
+                 eotd_ventilatory_mode %in% c('PSV', 'Pressure Support Ventilation (PSV)') ~ 'Pressure Support Ventilation',
+                 eotd_ventilatory_mode %in% c('Other','Other specify') ~ 'Other',
+                 eotd_ventilatory_mode %in% c('SIMV-VC','Synchronized Intermittent Mandatory Ventilation - Volume-Controlled (SIMV-V)') ~ 'Synchronized Intermittent Mandatory Ventilation: Volume-Controlled',
+                 eotd_ventilatory_mode %in% c('VC','Volume Controlled Ventilation') ~ 'Volume Controlled Ventilation',
+                 eotd_ventilatory_mode %in% c('CPAP', 'Continuous Positive Airway Pressure (CPAP)') ~ 'Continuous Positive Airway Pressure',
+                 eotd_ventilatory_mode %in% c('PRVC','Pressure Regulated Volume Control (PRVC)') ~ 'Pressure Regulated Volume Control',
+                 eotd_ventilatory_mode %in% c('PC','Pressure Controlled Ventilation') ~ 'Pressure Controlled Ventilation',
+                 eotd_ventilatory_mode=='Airway Pressure Release Ventilation (APRV)' ~ 'Airway Pressure Release Ventilation',
+                 eotd_ventilatory_mode=='Bylevel Positive Airway Pressure (BiPAP)' ~ 'Bylevel Positive Airway Pressure',
+                 eotd_ventilatory_mode=='Volume Support Ventilation (VSV)' ~ 'Volume Support Ventilation',
+                 eotd_ventilatory_mode=='Proportional Assist Ventilation (PAV)' ~ 'Proportional Assist Ventilation',
+                 eotd_ventilatory_mode=='High Frequency Oscillatory (HFO)' ~ 'High Frequency Oscillatory',
+                 eotd_ventilatory_mode=='Neurally Adjusted Ventilatory Assist (NAVA)' ~ 'Neurally Adjusted Ventilatory Assist',
+                 eotd_ventilatory_mode %in% c('SIMV-PC','Synchronized Intermittent Mandatory Ventilation - Pressure-Controlled (SIMV-P)') ~ 'Synchronized Intermittent Mandatory Ventilation: Pressure-Controlled'
+               ))
+
+
+#apply variable limits - Nicole White email 9/11/2021
+daily = mutate(daily, 
+               serum_creatinine = ifelse(serum_creatinine>16|serum_creatinine<0, 
+                                         NA, serum_creatinine), #filter out usually high values (mg/dL)
+               pa_co2 = ifelse(pa_co2>125, NA, pa_co2),
+               pa_o2_fi_o2 = ifelse(pa_o2_fi_o2<0|pa_o2_fi_o2>500,NA,pa_o2_fi_o2),
+               wbc = ifelse(wbc>300,NA,wbc),
+               d_dimer = ifelse(d_dimer>100,NA,d_dimer),
+               ferritin = ifelse(ferritin>80,NA,ferritin),
+               #update variable definitions from eotd form
+               eotd_airway_plateau_pressure = ifelse(eotd_airway_plateau_pressure<=0,
+                                                     NA,eotd_airway_plateau_pressure),
+               eotd_driving_pressure = eotd_airway_plateau_pressure - eotd_peep, #baseline covariate; cannot be <0
+               eotd_pa_co2 = ifelse(eotd_pa_co2>125,NA,eotd_pa_co2),
+               eotd_fi_o2 = eotd_fi_o2/100, #convert to same scale as isaric daily
+               eotd_pa_o2_fi_o2 = eotd_pa_o2/eotd_fi_o2,
+               eotd_pa_o2_fi_o2 = ifelse(eotd_pa_o2_fi_o2<0|eotd_pa_o2_fi_o2>500,
+                                         NA,eotd_pa_o2_fi_o2)) #L/min
+
+
  
 daily <- daily %>%  
   mutate(date_daily = as.Date(date_daily)) %>%
@@ -404,6 +491,9 @@ patients = mutate(patients,
                   # if there is a date then make sure they are not in "None" group
                   stroke_group = ifelse(!is.na(complication_stroke_date) & 
                                           stroke_group=='None', 'Other/Unknown', stroke_group))
+
+
+
 
 ### Section 2: save ###
 

@@ -533,22 +533,22 @@ summary(tab7, title="Characteristics of ECMO support")
 ```{r, results='asis'}
 
 
-date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
-date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
-date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
-date4 <- as.Date("2021-09-30", format="%Y-%m-%d")
+# date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
+# date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
+# date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
+# date4 <- as.Date("2021-09-30", format="%Y-%m-%d")
 
-ecmo_patients <- ecmo_patients %>%
-  mutate(era=case_when(as.numeric(date_admission - date1) >= 0 & 
-                       as.numeric(date2 - date_admission) >= 0 ~ "Jan-Jun 2020",
-                       as.numeric(date_admission - date2) > 0 & 
-                       as.numeric(date3 - date_admission) >= 0  
-                       ~ "Jul-Dec 2020",
-                       as.numeric(date_admission - date3) > 0 & 
-                       as.numeric(date4 - date_admission) >= 0  
-                       ~ "Jan-Oct 2021"
-                         ),
-         era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Oct 2021")))
+# ecmo_patients <- ecmo_patients %>%
+#   mutate(era=case_when(as.numeric(date_admission - date1) >= 0 & 
+#                        as.numeric(date2 - date_admission) >= 0 ~ "Jan-Jun 2020",
+#                        as.numeric(date_admission - date2) > 0 & 
+#                        as.numeric(date3 - date_admission) >= 0  
+#                        ~ "Jul-Dec 2020",
+#                        as.numeric(date_admission - date3) > 0 & 
+#                        as.numeric(date4 - date_admission) >= 0  
+#                        ~ "Jan-Oct 2021"
+#                          ),
+#          era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Oct 2021")))
 
 tabdata <- ecmo_patients %>%
   # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 

@@ -541,28 +541,30 @@ ecmo_discont <- combined_ecmo %>%
 
 
 ecmo_delta_o2 <- combined_ecmo %>%
-  mutate(diff = as.numeric(date_daily - date_ecmo)) %>%  #want last value to be 48 hours after ECMO started
+  mutate(diff = as.numeric(date_daily - date_ecmo),
+         diff2 = diff - 2) %>%  #want last value to be 48 hours after ECMO started
   filter( any_ecmo=='Yes',
           !is.na(pa_o2),
          !is.na(date_ecmo),
-         diff <= 2, diff > 0) %>% # must be at least one day after ECMO start date
+         diff <= 4, diff > 0) %>% # must be at least one day after ECMO start date
   group_by(pin) %>%
-  arrange(pin, diff) %>%
-  slice_tail( n=1) %>%  #take the day closest to 48 hours after start
+  arrange( diff2) %>%
+  slice_min(order_by = diff2, n=1, with_ties = F) %>%  #take the day closest to 48 hours after start
   ungroup() %>%
   rename(ecmo_48_pa_o2 = pa_o2) %>%
   select(pin, ecmo_48_pa_o2)
 
 
 ecmo_delta_co2 <- combined_ecmo %>%
-  mutate(diff = as.numeric(date_daily - date_ecmo)) %>%
+  mutate(diff = as.numeric(date_daily - date_ecmo),
+         diff2 = diff - 2) %>%
   filter( any_ecmo=='Yes',
           !is.na(pa_co2),
           !is.na(date_ecmo),
-          diff <= 2, diff > 0) %>% # must be at least one day after ECMO start date
+          diff <= 4, diff > 0) %>% # must be at least one day after ECMO start date
   group_by(pin) %>%
-  arrange(pin, diff) %>%
-  slice_tail( n=1) %>%  #take the day closest to 48 hours after start
+  arrange(pin, diff2) %>%
+  slice_min(order_by = diff2, n=1, with_ties = F) %>%  #take the day closest to 48 hours after start
   ungroup() %>%
   rename(ecmo_48_pa_co2 = pa_co2) %>%
   select(pin, ecmo_48_pa_co2)
@@ -620,6 +622,7 @@ ecmo_patients <- ecmo_patients %>%
          max_days_fup=ifelse(max_days_fup <=0, NA, max_days_fup),
          ##remove implausible values
          days_vent_ecmo = ifelse(days_vent_ecmo < 0 | days_vent_ecmo > 100, NA, days_vent_ecmo),
+         stroke_ICH = as.numeric(stroke_group3 == "ICH" & days_ecmo_stroke <= fup_stroke),
          stroke = as.numeric(complication_stroke == "Yes" & days_ecmo_stroke <= fup_stroke),
          stroke_death = factor(case_when(
            stroke_group3 == "ICH" ~ "Hemorrhagic stroke",
@@ -644,10 +647,28 @@ ecmo_patients <- ecmo_patients %>%
                             stroke_death == "None" & days_ecmo_disch <= fup_stroke 
                             & !is.na(date_hospital_discharge) ~ days_ecmo_disch,
                             TRUE ~ max_days_fup),
-         days_fup=ifelse(days_fup <=0, NA, days_fup))
+         days_fup=ifelse(days_fup <0, NA, days_fup))
+
+date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
+date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
+date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
+date4 <- as.Date("2021-09-30", format="%Y-%m-%d")
 
 
+ecmo_patients <- ecmo_patients %>%
+  mutate(era=case_when(as.numeric(date_admission - date1) >= 0 &
+                       as.numeric(date2 - date_admission) >= 0 ~ "Jan-Jun 2020",
+                       as.numeric(date_admission - date2) > 0 &
+                       as.numeric(date3 - date_admission) >= 0
+                       ~ "Jul-Dec 2020",
+                       as.numeric(date_admission - date3) > 0 &
+                       as.numeric(date4 - date_admission) >= 0
+                       ~ "Jan-Oct 2021"
+                         ),
+         era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Oct 2021")))
 
+
+#check OX_00581-0005
 
 # pa_o2_data = blood_gases(before_var='ecmo_worst_pa_o2_6hr_before',
 #                          after_var = 'pa_o2',
