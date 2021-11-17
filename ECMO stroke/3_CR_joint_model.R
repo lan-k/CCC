@@ -32,6 +32,8 @@ covars <- c("age", "sex", "comorbidity_obesity","comorbidity_hypertension",
 
 #start on the first day of ecmo up to 90 days days_fup
 
+
+
 ecmo_patients <- ecmo_patients %>%
   filter(
     #!is.na(date_ecmo_discontinued),
@@ -54,7 +56,7 @@ ecmo_patients <- ecmo_patients %>%
                                                "High Income","Middle Income")),
                                  ref="Middle Income"))
 
-
+table(ecmo_patients$any_stroke, ecmo_patients$stroke_group3, useNA="always")
 table(ecmo_patients$stroke_group2, ecmo_patients$stroke_group3, useNA="always")
 table(ecmo_patients$stroke_death, ecmo_patients$stroke_group3, useNA="always")
 

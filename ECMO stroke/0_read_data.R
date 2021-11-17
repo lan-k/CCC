@@ -10,7 +10,7 @@ library(UpSetR)
 
 # date of this data
 rm(list=ls())
-data_date <- '2021-11-12'
+data_date <- '2021-11-17'
 admin_censor_date = as.Date(data_date, format='%Y-%m-%d') # using date of data update
 folder = paste0("R:/data_deidentified/v1.0.0_",data_date)
 pfile = paste(folder, '/patients.csv', sep='')
@@ -151,12 +151,15 @@ patients$complication_stroke[patients$complication_stroke != 1 &
 ##add patients with cerebral hemorrhage in complication_other_value
 
 patients <- patients %>%
-  mutate(stroke_during_treatment_type_cerebral_haemorrhage = as.numeric(
+  mutate(complication_other_value = str_to_lower(complication_other_value),
+    stroke_during_treatment_type_cerebral_haemorrhage = as.numeric(
     (grepl("cerebral",complication_other_value, ignore.case=T) |
-       grepl("intracranial",complication_other_value, ignore.case=T)) & 
+       grepl("intracranial",complication_other_value, ignore.case=T) |
+       grepl("intracraneal",complication_other_value, ignore.case=T)) & 
       (grepl("hemorrhage",complication_other_value, ignore.case=T) |  
          grepl("haemorrhage",complication_other_value, ignore.case=T) |
-         grepl("hemorrage",complication_other_value, ignore.case=T))))
+         grepl("hemorrage",complication_other_value, ignore.case=T)|
+         grepl("hemorragi",complication_other_value, ignore.case=T))))
 
 
 
@@ -241,6 +244,7 @@ yes_responses <- dplyr::select(patients, pin, starts_with('stroke_during_treatme
   tidyr::gather(key='type', value='response', -pin) %>%
   filter(!is.na(response),
          !response =='') # remove missing and empty
+## Spanish dataset has many missing stroke type entries
 # now make list from group responses
 list_resp = group_by(yes_responses, pin) %>%
   summarise(listed = list(response)) %>%
@@ -482,17 +486,21 @@ for (k in 1:nrow(patients)){
   }
 }
 
-table(patients$stroke_group)
-table(patients$stroke_group2)
+
 # other fixes
 patients = mutate(patients,
                   # change missing to `no stroke`
                   stroke_group = ifelse(stroke_group=='', 'None', stroke_group),
                   # if there is a date then make sure they are not in "None" group
-                  stroke_group = ifelse(!is.na(complication_stroke_date) & 
+                  stroke_group = ifelse((!is.na(complication_stroke_date) | complication_stroke == 1) & 
                                           stroke_group=='None', 'Other/Unknown', stroke_group))
 
+table(patients$stroke_group,patients$complication_stroke, useNA = "always")
+sum(!is.na(patients$complication_stroke_date))
 
+##add missing stroke type to Unknown/Other group
+##17/11/2021 there are 255 patients with complication-stroke = 1, 
+# but only 132 with a complication_stroke_Date recorded
 
 
 ### Section 2: save ###

@@ -35,6 +35,8 @@ cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00",
 
 fup_stroke = 90  ##days of follow-up for stroke study
 
+##may need to exclude spain  - date of stroke not recorded 
+
 ## get the data
 WB <- read.csv("data/World_Bank_Income_List.csv", stringsAsFactors = F) %>%
   janitor::clean_names() %>%
@@ -690,7 +692,7 @@ ecmo_patients <- ecmo_patients %>%
 
 
 
-stroke <- patients  %>% 
+stroke <- ecmo_patients  %>% 
   filter(complication_stroke == "Yes" | stroke_during_treatment ==1)
 
 
