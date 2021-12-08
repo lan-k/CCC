@@ -10,7 +10,7 @@ library(UpSetR)
 
 # date of this data
 rm(list=ls())
-data_date <- '2021-11-17'
+data_date <- '2021-12-03'
 admin_censor_date = as.Date(data_date, format='%Y-%m-%d') # using date of data update
 folder = paste0("R:/data_deidentified/v1.0.0_",data_date)
 pfile = paste(folder, '/patients.csv', sep='')
@@ -141,6 +141,7 @@ patients = patients %>% mutate(
   # rename new variables to old to make life easier:
   rename('comorbidity_chronic_hematologic_disease' = 'comorbidity_chronic_hematologic_disease_comb',
          'comorbidity_severe_liver_disease' = 'comorbidity_severe_liver_disease_comb') 
+
 
 
 ##find stroke patients from complications_other field that haven't already been counted
@@ -311,16 +312,10 @@ patients = mutate(patients,
                     cause_of_death_detailed=='Not Applicable' ~ 'Not Applicable'
                   ))
 
-
-
-
 #define date of transfer to another facility if applicable
 patients = mutate(patients,
                   date_transfer = ifelse(outcome=='Transfer',date_outcome,NA), 
                   date_transfer = as.Date(date_transfer, origin='1970-01-01'))
-
-
-
 
 ## c) read the daily data ##
 daily = read.csv(dfile, stringsAsFactors = FALSE) %>%
@@ -497,6 +492,7 @@ patients = mutate(patients,
 
 table(patients$stroke_group,patients$complication_stroke, useNA = "always")
 sum(!is.na(patients$complication_stroke_date))
+
 
 ##add missing stroke type to Unknown/Other group
 ##17/11/2021 there are 255 patients with complication-stroke = 1, 

@@ -1,0 +1,376 @@
+###joint modelling
+
+# ---- get_data ----
+rm(list=ls())
+source('3_multivariate_survival.R') # prepares the data and runs exclusions
+library(JMbayes2)
+
+surv_vars2 <- c("age", "sex", "ecmo",
+                # "pin", "site_name",
+                "comorbidity_obesity",
+                "comorbidity_hypertension",
+                "comorbidity_diabetes",
+                "comorbidity_chronic_cardiac_disease",
+                # "comorbidity_chronic_neurological_disorder",
+                "ecmo_vasoactive_drugs_before",
+                "eotd_anticoagulants",
+                "days_vent_ecmo5",
+                # "cannula_lumen",
+                # "sofa",
+                "income_region", "era")
+
+
+
+surv_vars3 <- c("age", "sex", 
+               # "pin", "site_name",
+               "comorbidity_obesity",
+               "comorbidity_hypertension",
+               "comorbidity_diabetes",
+               "comorbidity_chronic_cardiac_disease",
+               # "comorbidity_chronic_neurological_disorder",
+               "ecmo_vasoactive_drugs_before",
+               "eotd_anticoagulants",
+               "days_vent_ecmo5",
+               # "cannula_lumen",
+               # "income_region", 
+               "era")
+
+
+
+jm_models <- function(
+                      svars,lvar, lfunc,fForm=NULL,
+                      n_iter = 10000L, n_burnin = 1000L,
+                      survdf=data.ids0) {
+  
+  ##function for JM with single longitudinal marker
+  
+  sdata <- survdf %>% select(site_name, pin, tstart, tstop, any_stroke,
+                             all_of(svars))
+  
+  jdata <- ecmo_daily  %>% 
+    select(day, ecmo, all_of(lvar),
+           site_name, pin,  all_of(svars)) %>%  
+    na.omit()
+  
+  ids <- jdata$pin %>% unique()
+  sdata <- sdata[sdata$pin %in% ids,]
+  
+  sf <- as.formula(
+    paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + age^2 + days_vent_ecmo5^2 + "
+           , paste0(svars, collapse="+")))
+  
+  sFit <- coxph(sf, data = sdata, id=pin)
+  
+  lf <- as.formula(
+    paste0(lfunc,"~ day + ecmo:day"))
+  
+  lFit <- lme(lf,data = jdata, random = ~ day | pin)
+  
+  jFit <- jm(sFit, lFit,time_var = "day",
+             functional_forms = fForm)
+  
+  stab <- summary(jFit)$Survival
+  jtab <- round(exp(stab[c(1,3,4)]),digits=3)
+  colnames(jtab) <- c("mean","lower","upper")
+  jtab$N <- jFit$model_data$n
+  jtab$nevent<- sFit$nevent
+  
+  jtab$Variable = rownames(jtab)
+  rownames(jtab) <- c()
+  
+  
+  return(jtab)
+                      
+}
+
+
+# ---- JM_data ----
+ecmo_daily <- ecmo_daily %>%
+  mutate(logappt60 = log2(aptt) - log2(60))
+
+
+
+data.ids0a <- ecmo_daily %>% # ecmo_daily  %>% mutate(age_day = age + day) %>%
+  filter( !is.na(eotd_anticoagulants)) %>%
+  group_by(pin,  eotd_anticoagulants) %>%
+  arrange(pin, day) %>%
+  #slice_max(day,n=1) %>%
+  ungroup() %>%
+  arrange(pin, day) %>%
+  group_by(pin) %>%
+  mutate(next_day=lead(day),
+         prev_day=lag(day),
+         # fup=ifelse(is.na(prev_day), day, days_fup-prev_day),
+         tstart = ifelse(is.na(prev_day),0,day),
+         tstop = ifelse(!is.na(next_day), next_day,days_fup),
+         # tstart=ifelse(is.na(prev_day), 0 , prev_day),
+         # tstop = ifelse(!is.na(lead(prev_day)),day,days_fup) , 
+         status = factor(ifelse(day != max(day), "Alive", as.character(status))),
+         any_stroke = ifelse(day != max(day), 0, any_stroke)) %>%
+  ungroup() %>%
+  mutate(tstop = ifelse(tstop == tstart, tstop + 0.5, tstop), #for same day stop and start
+         age_start = age+tstart,
+         age_stop=age + tstop,
+         status2 = case_when(as.character(status) %in% c("Discharged","Alive") ~ 0,
+                             as.character(status) == "Stroke" ~ 1,
+                             as.character(status) == "Death" ~ 2),
+         status2 = factor(status2, 0:2, labels=c("Censor", "Stroke", "Death")),
+         status3 = as.numeric(status %in% c("Stroke","Death"))) %>% 
+  select(!c(p_h, pa_o2, pa_co2,platelet_count,d_dimer, il_6, aptt,inr, haemoglobin)) 
+
+
+
+
+
+
+jmdat0 <- ecmo_daily %>%
+  mutate(age_day = age + day) %>%  
+  group_by(pin) %>%
+  # mutate(p_h = rollapply(p_h,3,median,align='center',fill=NA),
+  #        pa_co2 = rollapply(pa_co2,3,median,align='center',fill=NA),
+  #        pa_o2 = rollapply(pa_o2,3,median,align='center',fill=NA),
+  #        pa_o2_fi_o2 = rollapply(pa_o2_fi_o2,3,median,align='center',fill=NA),
+  #        p_h = ifelse(day==0 & is.na(p_h), ecmo_worst_arterial_p_h_6hr_before, p_h),
+  #        pa_o2 = ifelse(day==0 & is.na(pa_o2), ecmo_worst_pa_o2_6hr_before, pa_o2),
+  #        pa_co2 = ifelse(day==0 & is.na(pa_co2), ecmo_worst_pa_co2_6hr_before, pa_co2)
+  #        ) %>%
+  # filter(!all(is.na(p_h))
+  #        ,!all(is.na(ecmo))
+  #        ,!all(is.na(pa_co2))
+#        ,!all(is.na(pa_o2))
+#        ) %>%
+ungroup() %>%
+  select(pin, date_daily, date_ecmo, cannula_lumen,
+         ecmo_vasoactive_drugs_before, eotd_anticoagulants, #,ac_before,  survival not converging with ac_before
+         p_h, p_h_cent,pa_o2, pa_co2, pa_o2_fi_o2, eotd_peep, haemoglobin,
+         # ecmo_worst_pa_o2_6hr_before, ecmo_worst_pa_co2_6hr_before,
+         # ecmo_worst_arterial_p_h_6hr_before,
+         # ecmo_highest_fi_o2_6hr_before,
+         delta_o2, delta_co2,ecmo_worst_pa_o2_fi_o2_before,
+         platelet_count,d_dimer, il_6, aptt,logappt60, inr,
+         day, ecmo,days_fup, any_stroke, stroke_death,
+         age_day,all_of(covars),
+         status) 
+
+
+
+
+# jmdat0 %>% vis_dat()
+
+
+
+##remove missing data
+#remove rows with missing data
+jmdat <- jmdat0  %>% 
+  select(!c(d_dimer, il_6, aptt,logappt60, inr,eotd_peep,pa_o2_fi_o2,
+            delta_o2, delta_co2, ecmo_worst_pa_o2_fi_o2_before)) %>% #too much missing data  pa_o2_fi_o2,
+  na.omit()
+
+ids <- jmdat$pin %>% unique()
+data.ids <- data.ids0[data.ids0$pin %in% ids,]
+check <- data.ids %>% select(pin, day, prev_day, next_day, tstart, tstop,  days_fup)
+
+length(unique(jmdat$pin))  #351
+
+length(unique(data.ids$pin))  
+
+table(data.ids$any_stroke, useNA = "always")
+
+table(data.ids$status, data.ids$status2) #43 strokes reduced to 32 after removing missing data
+
+
+# ---- plots ----
+plot(lowess(jmdat0$p_h_cent^2 ~ jmdat0$day))
+plot(lowess(log(jmdat0$pa_o2) ~ jmdat0$day))
+plot(lowess(log(jmdat0$pa_co2) ~ jmdat0$day))
+plot(lowess(log(jmdat0$platelet_count) ~ jmdat0$day))
+plot(lowess(jmdat0$haemoglobin ~ jmdat0$day))
+
+# ---- univ_jm_model ----
+(jm_ph <- jm_models( svars = surv_vars2,"p_h", "p_h",
+                      n_iter = 1000L, n_burnin = 100L) ) #wide CI for pH
+
+# (jm_ph2 <- jm_models(svars = surv_vars,"p_h_cent", "p_h_cent^2",
+#                     n_iter = 1000L, n_burnin = 100L) ) #doesn't converge
+
+# (jm_ph_cent <- jm_models(svars = surv_vars,"p_h_cent", "abs(p_h_cent)",
+#                      n_iter = 1000L, n_burnin = 100L) ) 
+
+
+(jm_o2 <- jm_models(svars = surv_vars2,"pa_o2", "log(pa_o2)",
+                   n_iter = 1000L, n_burnin = 100L))
+
+(jm_o2_sl <- jm_models(svars = surv_vars2,"pa_o2", "log2(pa_o2)",
+                    fForm =   ~ value(log2(pa_o2))  
+                     + slope(log2(pa_o2), eps=1, direction = "back" )
+                    ,n_iter = 1000L, n_burnin = 100L))
+
+(jm_co2 <- jm_models(svars = surv_vars2,"pa_co2", "log2(pa_co2)",
+                    n_iter = 1000L, n_burnin = 100L))
+
+(jm_co2_sl <- jm_models(svars = surv_vars2,"pa_co2", "log2(pa_co2)",
+                     fForm =   ~ value(log2(pa_co2)) + 
+                         slope(log2(pa_co2), eps=1, direction = "back")
+                     ,n_iter = 1000L, n_burnin = 100L))
+
+
+(jm_pc <- jm_models(svars = surv_vars2,"platelet_count", "log2(platelet_count)",
+                    # fForm = ~ value(platelet_count)  + slope(platelet_count, eps=1, direction = "back"),
+                    n_iter = 1000L, n_burnin = 100L))
+
+
+
+(jm_hb <- jm_models(svars = surv_vars2,"haemoglobin", "haemoglobin",
+                   n_iter = 1000L, n_burnin = 100L))
+
+
+
+# (jm_aptt <- jm_models( svars = surv_vars3,"appt", "log2(appt)",
+#                        n_iter = 1000L, n_burnin = 100L,
+#                        survdf=data.ids0a)) #most patients are on ecmo, high income, country etc
+# 
+(jm_aptt2 <- jm_models( svars = surv_vars3,"logappt60", "logappt60^2",
+                     n_iter = 1000L, n_burnin = 100L,
+                     survdf=data.ids0a)) #most patients are on ecmo, high income, country etc
+
+
+# ---- multi_jm_model ----
+# the joint model
+
+# fForms <- list(
+#   "log(serBilir)" = ~ slope(log(serBilir)) + slope(log(serBilir)):sex,
+#   "prothrombin" = ~ area(prothrombin)
+# )
+
+
+##longitudinal models
+# the linear mixed model
+# lmeFit.p1 <- lme(p_h ~ day + ecmo:day  ,
+#                  data = jmdat, random = ~ day | pin)  #, na.action=na.exclude
+
+lmeFit.p2 <- lme(log2(pa_o2) ~ day + ecmo:day  ,
+                 data = jmdat, random = ~ day | pin)  #, na.action=na.exclude
+
+lmeFit.p3 <- lme(log2(pa_co2) ~ day + ecmo:day  ,
+                 data = jmdat, random = ~ day | pin)  #, na.action=na.exclude
+
+lmeFit.p4 <- lme(log2(platelet_count) ~ day + ecmo:day  ,
+                 data = jmdat, random = ~ day | pin)
+
+lmeFit.p5 <- lme(haemoglobin ~ day + ecmo:day  ,
+                 data = jmdat, random = ~ day | pin)
+
+# lmeFit.p6 <- lme(log(pa_o2_fi_o2) ~ day + ecmo:day  ,
+#                  data = jmdat, random = ~ day | pin)
+
+
+
+
+# lmeFit.p5 <- mixed_model(eotd_anticoagulants ~ day + ecmo:day  ,
+#                           data = jmdat,
+#                           family = binomial(), random = ~ 1 | pin)
+
+
+
+##survival model using data from longitudinal model
+sform = as.formula(
+  paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo + age^2 + days_vent_ecmo5^2 + "
+         , paste0(surv_vars2, collapse="+")))
+survFit.p1 <- coxph(sform , 
+                    data = data.ids, id=pin)
+summary(survFit.p1)
+
+cox.zph(survFit.p1) #all PH 
+
+
+jointFit1.p1 <- jm(survFit.p1, list( lmeFit.p2,lmeFit.p3, lmeFit.p4,  lmeFit.p5),   # lmeFit.p1,, lmeFit.p6
+                   time_var = "day",
+                   # functional_forms = fForms,
+                   
+                   functional_forms = ~ 
+                         #value(p_h)  #+ slope(p_h, eps=1, direction = "back")
+                        + value(log2(pa_o2)) #+ slope(log(pa_o2), eps=1, direction = "back") 
+                        + value(log2(pa_co2))  # + slope(log(pa_co2), eps=1, direction = "back")
+                       # + lag(log(platelet_count)) + slope(log(platelet_count), eps=1, direction = "back")
+                       # + vexpit(value(eotd_anticoagulants))
+                      
+                   ,n_iter = 1000L, n_burnin = 100L) #,n_iter = 10000L, n_burnin = 1000L)
+
+summary(jointFit1.p1)
+
+
+# Hazard Ratios
+stab <- summary(jointFit1.p1)$Survival
+(jmtab <- round(exp(stab[c(1,3,4)]),digits=3))
+
+
+##shrink coefficients
+jointFit2 <- update(jointFit1.p1, priors = list("penalty_alphas" = "ridge")) #horseshoe
+coefs <- cbind("un-penalized" = unlist(coef(jointFit1.p1)), 
+      "penalized" = unlist(coef(jointFit2)))
+
+exp(coefs[,c(1,2)]) #almost no difference
+
+
+# ---- jm_model_CR ----
+####competing risks version
+
+data.CR <- data.ids %>% select(all_of(surv_vars2), tstop, tstart, status2, pin, site_name) %>%
+  rename(status=status2)
+data.CR <- crLong(data.CR, 
+                  statusVar = "status",
+                  censLevel = "Alive", nameStrata = "CR")
+
+##version for CR model
+# sform2 = as.formula(Surv(tstart, 
+#                          tstop, status2) ~ (age + age^2 + sex + ecmo  #Surv(fup, any_stroke) , status2
+#                                                + days_vent_ecmo + days_vent_ecmo^2  + cannula_lumen
+#                                                + income_region + era  + eotd_anticoagulants #+ ac_before + cannula_lumen
+#                                                + ecmo_vasoactive_drugs_before
+#                                                + comorbidity_obesity + comorbidity_hypertension
+#                                                + comorbidity_diabetes)*strata(CR) #+ ecmo_prone_before 
+#                     + cluster(pin, site_name)
+# )
+
+sform3 = as.formula(
+  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo + age^2 + days_vent_ecmo5^2 + "
+         , paste0(surv_vars2, collapse="+"),")*strata(CR)"))
+
+survFit.CR <- coxph(sform3 ,id=pin, data = data.CR)
+summary(survFit.p3)
+
+
+                   
+
+# the CR joint model
+
+CR_forms <- list(
+  "log(pa_o2)" = ~ value(log(pa_o2)):CR,
+  "log(pa_co2)" = ~ value(log(pa_co2)):CR,
+  "log(platelet_count)" = ~ value(log(platelet_count)):CR,
+  "haemaglobin" = ~ value(haemaglobin):CR
+)
+jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4,  lmeFit.p5), 
+                   time_var = "day",
+                   functional_forms = CR_forms
+                   ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L) #,n_iter = 10000L, n_burnin = 1000L)
+
+summary(jointFit1.CR)
+(stab2 <- summary(jointFit1.CR)$Survival)
+round(exp(stab2[c(1,3,4)]),digits=3)
+
+##shrink CR coefficients
+jointFit.CR2 <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) #horseshoe
+
+
+coefs.CR <- cbind("un-penalized" = unlist(coef(jointFit1.CR)), 
+               "penalized" = unlist(coef(jointFit.CR2)))
+
+exp(coefs.CR[,c(1,2)]) #almost no difference
+exp(unlist(confint(jointFit1.CR)))
+
+
+
+
+
+

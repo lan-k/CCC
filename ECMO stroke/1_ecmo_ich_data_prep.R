@@ -35,12 +35,15 @@ cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00",
 
 fup_stroke = 90  ##days of follow-up for stroke study
 
+
 ##may need to exclude spain  - date of stroke not recorded 
 
 ## get the data
 WB <- read.csv("data/World_Bank_Income_List.csv", stringsAsFactors = F) %>%
   janitor::clean_names() %>%
   select(country, income_group)
+
+spain_pins <- read.csv("data/Spain_pin.csv", stringsAsFactors = F)
 
 load(file='data/COVID_Data_stroke.RData') # from 0_read_data.R  
 # if(source == 'dummy_data'){
@@ -56,8 +59,19 @@ load(file='data/COVID_Data_stroke.RData') # from 0_read_data.R
 # }
 
 
+#date for the eras
+date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
+date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
+date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
+date4 <- as.Date(data_date) #as.Date("2021-11-30", format="%Y-%m-%d")
+
+
+
 patients <- patients %>% left_join(WB, by="country") 
-##functions to return max and handles NA
+
+##remove patients from Spanish database since date of stroke is not recorded
+patients <- patients %>% anti_join(spain_pins)
+daily <- daily %>% anti_join(spain_pins)
 
 
   
@@ -109,6 +123,9 @@ patients = select(patients, 'pin', 'site_name','country',income_group,
                                ecmo_type == "Veno-arterial" ~ "Venous-Arterial",
                                TRUE ~ ecmo_type
                                ),
+         comorbidity_obesity = case_when(is.na(comorbidity_obesity) & !is.na(bmi) & bmi >= 30 ~ 1,
+                                         is.na(comorbidity_obesity) & !is.na(bmi) & bmi < 30 ~ 0,
+                                         TRUE ~ comorbidity_obesity),
          cannula_lumen = case_when(
            !is.na(ecmo_return_cannula_insertion_site) & 
              !is.na(ecmo_drainage_cannula_insertion_site) &
@@ -131,14 +148,14 @@ table(patients$country, patients$stroke_group, useNA = "always")
 ## exclusions
 # age, must be adults
 starting_n = nrow(patients)
-n_exclude_age_stroke = nrow(filter(patients, age < 18, !is.na(complication_stroke_date))) # count those excluded in stroke group
+(n_exclude_age_stroke = nrow(filter(patients, age < 18, !is.na(complication_stroke_date)))) # count those excluded in stroke group
 patients = filter(patients,
                   !is.na(age),
                   age >= 18) # 
 n_exclude_age = starting_n - nrow(patients) 
 # no ICU date
 previous_n = nrow(patients)
-n_exclude_icu_stroke = nrow(filter(patients, is.na(date_icu), !is.na(complication_stroke_date))) # count those excluded in stroke
+(n_exclude_icu_stroke = nrow(filter(patients, is.na(date_icu), !is.na(complication_stroke_date)))) # count those excluded in stroke
 patients = filter(patients,
                   !is.na(date_icu))
 n_exclude_icu = previous_n -nrow(patients) 
@@ -261,24 +278,26 @@ icu = 'lightcyan3'
 ecmo_start = 'dodgerblue'
 ecmo_end = 'goldenrod1'
 
+
 #### Essential work for fixing stroke group ####
 # a) no stroke date
 f = filter(patients, complication_stroke=='Yes') %>%
   select(pin, date_icu, complication_stroke_date, last_date, date_death, date_discharge, 
          date_hospital_discharge, date_ecmo_discontinued, stroke_group) 
 n_start = nrow(f) # starting number
-n_missing_stroke_date = sum(is.na(f$complication_stroke_date)) # number excluded for missing stroke
+(n_missing_stroke_date = sum(is.na(f$complication_stroke_date))) 
+# number excluded for missing stroke, 116 on 19/11/2021
 # b) stroke before ICU admission
 f2 = filter(f, 
             !is.na(complication_stroke_date)) # now use just complete
 n_update = nrow(f2)
 f2 = filter(f2, complication_stroke_date >= date_icu)
-n_stroke_prior_icu = n_update - nrow(f2) # number excluded
+(n_stroke_prior_icu = n_update - nrow(f2)) # number excluded, 16 on 19/11/2021
 # c) stroke after hospital discharge or still on ECMO
 f3 = mutate(f2, 
             diff = as.numeric(complication_stroke_date - date_hospital_discharge)) %>%
   filter(is.na(diff) | diff<=0 )
-n_stroke_post_discharge = nrow(f2) - nrow(f3)
+(n_stroke_post_discharge = nrow(f2) - nrow(f3))
 n_final = nrow(f3)
 # find patients knocked out by `c`
 s = f2$pin[f2$pin %in% f3$pin==FALSE]
@@ -379,7 +398,7 @@ combined_ecmo <- combined %>%
 
 
 ##worst PF-ratio in the day before ECMO
-worst_PF <- combined_ecmo %>%
+worst_PF_day_before <- combined_ecmo %>%
   filter(any_ecmo=='Yes') %>%
   mutate(diff=as.numeric(date_daily - date_ecmo)) %>%
   filter(diff == -1) %>%
@@ -390,8 +409,36 @@ worst_PF <- combined_ecmo %>%
   select(pin, ecmo_worst_pa_o2_fi_o2_day_before) %>%
   unique()
 
+
+PF_before <- combined_ecmo %>%
+  filter(any_ecmo=='Yes') %>%
+  mutate(diff=as.numeric(date_daily - date_ecmo),
+         ecmo_highest_fi_o2_6hr_before=ifelse(ecmo_highest_fi_o2_6hr_before<21|
+                                                ecmo_highest_fi_o2_6hr_before>100,NA,
+                                              ecmo_highest_fi_o2_6hr_before/100),
+         ecmo_worst_pa_o2_fi_o2_6hr_before =  ecmo_worst_pa_o2_6hr_before/ecmo_highest_fi_o2_6hr_before) %>%
+  filter(diff < 0, 
+         !is.na(pa_o2_fi_o2) | !is.na(ecmo_worst_pa_o2_fi_o2_6hr_before)) %>%
+  group_by(pin) %>%
+  slice_max(diff, n=1) %>%
+  mutate(ecmo_pa_o2_fi_o2_before = pa_o2_fi_o2) %>%
+  select(pin,  ecmo_pa_o2_fi_o2_before,pa_o2_fi_o2, diff, 
+         ecmo_worst_pa_o2_6hr_before, ecmo_highest_fi_o2_6hr_before,
+         ecmo_worst_pa_o2_fi_o2_6hr_before) %>% #pa_o2, fi_o2,
+  unique() %>%
+  filter(diff >= -7 |
+           !is.na(ecmo_worst_pa_o2_fi_o2_6hr_before)) %>%  #restrict to 10 days before the start of ECMO
+  mutate(ecmo_worst_pa_o2_fi_o2_before = ifelse(!is.na(ecmo_worst_pa_o2_fi_o2_6hr_before),
+                                                min(ecmo_worst_pa_o2_fi_o2_6hr_before,
+                                                    ecmo_pa_o2_fi_o2_before, na.rm=T),
+                                                ecmo_pa_o2_fi_o2_before))  %>%
+  select(pin,  ecmo_worst_pa_o2_fi_o2_before)  %>%  
+  ungroup()
+
+
 patients <- patients %>%
-  left_join(worst_PF, by="pin")
+  left_join(worst_PF_day_before, by="pin") %>%
+  left_join(PF_before, by="pin")
   
 
 
@@ -574,7 +621,7 @@ ecmo_delta_co2 <- combined_ecmo %>%
 
   
   
-  ecmo_patients <- left_join(ecmo_patients, ecmovars %>% 
+ecmo_patients <- left_join(ecmo_patients, ecmovars %>% 
                              select(pin, anticoagulants,ecmo_circuit_change,
                                     rr_vent,complication_haemorrhage,
                                     complication_hyperbilirunemia) %>%
@@ -651,10 +698,6 @@ ecmo_patients <- ecmo_patients %>%
                             TRUE ~ max_days_fup),
          days_fup=ifelse(days_fup <0, NA, days_fup))
 
-date1 <- as.Date("2020-01-01", format="%Y-%m-%d")
-date2 <- as.Date("2020-06-30", format="%Y-%m-%d")
-date3 <- as.Date("2020-12-31", format="%Y-%m-%d")
-date4 <- as.Date("2021-09-30", format="%Y-%m-%d")
 
 
 ecmo_patients <- ecmo_patients %>%
@@ -665,9 +708,9 @@ ecmo_patients <- ecmo_patients %>%
                        ~ "Jul-Dec 2020",
                        as.numeric(date_admission - date3) > 0 &
                        as.numeric(date4 - date_admission) >= 0
-                       ~ "Jan-Oct 2021"
+                       ~ "Jan-Sep 2021"
                          ),
-         era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Oct 2021")))
+         era=ordered(era, levels=c("Jan-Jun 2020","Jul-Dec 2020","Jan-Sep 2021")))
 
 
 #check OX_00581-0005
@@ -689,11 +732,11 @@ ecmo_patients <- ecmo_patients %>%
 
 
 
+remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
+       ecmo_discont, ecmovars, PF_before, pre_ecmo,
+       spain_pins, timechecks, timevars, WB, worst_PF_day_before)
 
 
-
-stroke <- ecmo_patients  %>% 
-  filter(complication_stroke == "Yes" | stroke_during_treatment ==1)
 
 
 
