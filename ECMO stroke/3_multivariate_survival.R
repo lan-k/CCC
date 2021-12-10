@@ -15,44 +15,41 @@ library(goftest)
 library(visdat)
 options(scipen=999) # avoid scientific presentation
 
-start_date = as.Date(data_date) - 90 #as.Date("2021-08-11")
-
-biomarkers <- c("ecmo_high_d_dimer","ecmo_high_il_6",
-                "ecmo_start_worst_platelet_count",
-                "ecmo_worst_arterial_p_h_6hr_before","ecmo_high_aptt",
-                "ecmo_high_inr",
-                "d_dimer","il_6", "platelet_count",
-                "pa_o2_fi_o2", "eotd_peep",
-                "haemoglobin",
-                "eotd_anticoagulants")
-
-covars <- c("age", "sex", "comorbidity_obesity","comorbidity_hypertension",
-            "comorbidity_diabetes","comorbidity_chronic_neurological_disorder",
-            "ecmo_worst_pa_o2_fi_o2_before",
-             # "ecmo_prone_before",
-            "income_region", "site_name", "days_vent_ecmo5", "era")
-
-#start on the first day of ecmo up to 90 days days_fup
-
-surv_vars <- c("age", "sex", "ecmo",
-                # "pin", "site_name",
-                "comorbidity_obesity",
-                "comorbidity_hypertension",
-                "comorbidity_diabetes",
-                "comorbidity_chronic_cardiac_disease",
-                # "comorbidity_chronic_neurological_disorder",
-                "ecmo_vasoactive_drugs_before",
-                "eotd_anticoagulants",
-                "days_vent_ecmo5",
-                "cannula_lumen",
-                "income_region", "era")
-
 
 
 
 
 
 # ---- survival_data ----
+
+start_date = as.Date(data_date) - 90 #as.Date("2021-08-11")
+
+
+
+covars <- c("age", "sex", "comorbidity_obesity","comorbidity_hypertension",
+            "comorbidity_diabetes","comorbidity_chronic_neurological_disorder",
+            "ecmo_worst_pa_o2_fi_o2_before",
+            # "ecmo_prone_before",
+            "income_region", "site_name", "days_vent_ecmo5", "era")
+
+#start on the first day of ecmo up to 90 days days_fup
+
+surv_vars <- c("ecmo","age", "sex", 
+               # "pin", "site_name",
+               "ethnic_white",
+               "current_smoker",
+               "comorbidity_obesity",
+               "comorbidity_hypertension",
+               "comorbidity_diabetes",
+               "comorbidity_chronic_cardiac_disease",
+               # "comorbidity_chronic_neurological_disorder",
+               "ecmo_vasoactive_drugs_before",
+               "eotd_anticoagulants",
+               "cannula_lumen",
+               "days_vent_ecmo5",
+               "income_region", "era")
+
+
 
 ###need to include anticoagulants as a time varying exposure
 data.ids0 <- ecmo_daily %>% # jmdat0  %>% mutate(age_day = age + day) %>%
@@ -90,7 +87,7 @@ data.ids0 <- ecmo_daily %>% # jmdat0  %>% mutate(age_day = age + day) %>%
 # ---- multi_surv ----
 
 sform = as.formula(
-  paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo + age^2 + days_vent_ecmo5^2 + "
+  paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo + age^2 + sex + days_vent_ecmo5^2 + "
          , paste0(surv_vars, collapse="+")))
 
 survFit.p0 <- coxph(sform ,
@@ -101,7 +98,7 @@ cox_data <- data.frame(coxsum$conf.int[,c(1,3:4)])
 cox_data$Variable=rownames(cox_data)
 rownames(cox_data) <- c()
 
-
+npat <- data.ids0 %>% select(surv_vars, ecmo, pin) %>% na.omit() %>% pull(pin) %>% unique
 cox_data <- cox_data %>%
   rename(mean=exp.coef.,
          lower=lower..95,
@@ -144,7 +141,7 @@ crdata <- finegray(Surv(etime1, etime2, event) ~ ., data=crdata,id=pin,
 #creates the Fine-Gray weights for stroke as the event
 
 sform2 = as.formula(
-  paste0("Surv(fgstart, fgstop, fgstatus) ~ cluster(pin, site_name) + ecmo + age^2 + days_vent_ecmo5^2 + "
+  paste0("Surv(fgstart, fgstop, fgstatus) ~ cluster(pin, site_name) + ecmo + age^2 + sex + days_vent_ecmo5^2 + "
          , paste0(surv_vars, collapse="+")))
 
 fitFG <- coxph( sform2, id=pin,weight=fgwt,
@@ -157,6 +154,7 @@ upper = mean + 1.96 * se
 fg_data <- data.frame(exp(cbind(mean, lower, upper)))
 
 fg_data$Variable=rownames(fg_data)
+
 rownames(fg_data) <- c()
 
 fg_data <- fg_data %>%
@@ -215,7 +213,7 @@ multi_forest <- multi_hr_data %>%
              line.margin = 0.5, #.2,
              boxsize = .25,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 1.0),
+                              ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
              col = fpColors(box = c("cyan4","darkorange1"),
                             line = c("cyan4","darkorange1")),
@@ -224,7 +222,7 @@ multi_forest <- multi_hr_data %>%
              vertices = TRUE,
              xlab="subHR/HR")
 
-# multi_forest
+multi_forest
 
 
 

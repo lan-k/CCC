@@ -270,10 +270,12 @@ fit1 <- survfit(Surv(days_fup, status, type="mstate") ~ 1, data=ecmo_patients)
 #   scale_fill_jco(labels=c("Alive", "Death","Discharged","Stroke"))
 
 # ---- ci_curve2 ----
-fit2 <- survfit(Surv(days_fup, status2, type="mstate") ~ group, data=ecmo_patients)
+fit2 <- survfit(Surv(days_fup, status2, type="mstate") ~ group, 
+                data=ecmo_patients)
 ggcompetingrisks(fit2,
                  ggtheme = theme_cowplot(),
                  group=group,
+                 xlab = "Days since ECMO initiation",
                  title="Cumulative Incidence")  + 
   scale_fill_jco(labels=c("Alive", "Death","Stroke"))
 
@@ -311,27 +313,28 @@ tfit <-  coxph(Surv(tstart, tstop, any_stroke) ~
 
 
 # ---- uni_surv_stroke ----
-(hr_ecmo <- univ("ecmo", df= data.ids0e))
-(hr_age <- univ(var="age",var2="age + age^2",df= ecmo_patients))
-(hr_sex <- univ("sex",df= ecmo_patients))
-(hr_ethnic <- univ("ethnic_white",df= ecmo_patients))
-(hr_smoke <- univ("current_smoker",df= ecmo_patients))
-(hr_vent_ecmo <- univ(var="days_vent_ecmo5",
-                      var2="days_vent_ecmo5 + days_vent_ecmo5^2",df= ecmo_patients))
-(hr_cannula_lumen <- univ("cannula_lumen",df= ecmo_patients))
+hr_ecmo <- univ("ecmo", df= data.ids0e)
+hr_age <- univ(var="age",var2="age + age^2",df= ecmo_patients)
+hr_sex <- univ("sex",df= ecmo_patients)
+hr_vent_ecmo <- univ(var="days_vent_ecmo5",
+                      var2="days_vent_ecmo5 + days_vent_ecmo5^2",df= ecmo_patients)
+hr_ethnic <- univ("ethnic_white",df= ecmo_patients)
+hr_smoke <- univ("current_smoker",df= ecmo_patients)
+hr_cannula_lumen <- univ("cannula_lumen",df= ecmo_patients)
 # (hr_ac_before <- univ("ac_before",df= data.ids0)) #all strokes had no AC before
-(hr_anticoagulants <- univ("eotd_anticoagulants",df= data.ids0))
-(hr_obesity <- univ( var= "comorbidity_obesity",df= ecmo_patients))
-(hr_vasoactive <- univ("ecmo_vasoactive_drugs_before",df= ecmo_patients))
-(hr_diabetes <- univ( var= "comorbidity_diabetes",df= ecmo_patients))
-(hr_cardiac <- univ("comorbidity_chronic_cardiac_disease",df= ecmo_patients))
+hr_anticoagulants <- univ("eotd_anticoagulants",df= data.ids0)
+hr_obesity <- univ( var= "comorbidity_obesity",df= ecmo_patients)
+hr_vasoactive <- univ("ecmo_vasoactive_drugs_before",df= ecmo_patients)
+hr_diabetes <- univ( var= "comorbidity_diabetes",df= ecmo_patients)
+hr_cardiac <- univ("comorbidity_chronic_cardiac_disease",df= ecmo_patients)
 # (hr_neuro <- univ("comorbidity_chronic_neurological_disorder",df= ecmo_patients))
 # (hr_pregnant <- univ("pregnant",df= data.ids0))
-(hr_hypertension <- univ("comorbidity_hypertension",df= ecmo_patients))
-(hr_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients))
-(hr_sofa <- univ(var="sofa",var2="sofa + sofa^2",df= ecmo_patients))
-(hr_region <- univ("income_region",df= ecmo_patients))
-(hr_era <- univ("era",df= ecmo_patients))
+hr_hypertension <- univ("comorbidity_hypertension",df= ecmo_patients)
+hr_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
+              var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
+hr_sofa <- univ(var="sofa",var2="sofa + sofa^2",df= ecmo_patients)
+hr_region <- univ("income_region",df= ecmo_patients)
+hr_era <- univ("era",df= ecmo_patients)
 # (hr_era1_0 <- univ("era1_0",df= ecmo_patients))
 # (hr_era2_1 <- univ("era2_1",df= ecmo_patients))
 
@@ -339,11 +342,13 @@ tfit <-  coxph(Surv(tstart, tstop, any_stroke) ~
 
 ### forestplot
 
-hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,hr_ethnic,
+hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,
+                            hr_vent_ecmo,
+                            hr_ethnic,
                             hr_smoke, hr_obesity, 
                             hr_diabetes, hr_cardiac,
                             hr_hypertension, #hr_neuro,
-                            hr_vent_ecmo,
+                            
                             hr_vasoactive,
                             hr_anticoagulants,
                             hr_cannula_lumen, 
@@ -394,48 +399,49 @@ hr_data <- bind_rows(header,hr_data)
 hr_forest <- hr_data %>% 
   forestplot(labeltext = c(Variable, N, HR), 
              title = "Stroke within 90 days of ECMO",
+             graph.pos=3,
              xlog = F, 
              zero=1,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 1.0),
+                              ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
              col = fpColors(box = "royalblue",
                             line = "darkblue"),
              vertices = TRUE,
              xlab="Hazard Ratio")
 
-# hr_forest
+hr_forest
 
 
 # ---- subHR ----
-(shr_ecmo <- univ_compete("ecmo", df= data.ids0e))
-(shr_age <- univ_compete(var="age", var2="age + age^2",df= ecmo_patients))
-(shr_sex <- univ_compete("sex",df= ecmo_patients))
-(shr_ethnic <- univ_compete("ethnic_white",df= ecmo_patients))
-(shr_smoke <- univ_compete("current_smoker",df= ecmo_patients))
-(shr_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
+shr_ecmo <- univ_compete("ecmo", df= data.ids0e)
+shr_age <- univ_compete(var="age", var2="age + age^2",df= ecmo_patients)
+shr_sex <- univ_compete("sex",df= ecmo_patients)
+shr_ethnic <- univ_compete("ethnic_white",df= ecmo_patients)
+shr_smoke <- univ_compete("current_smoker",df= ecmo_patients)
+shr_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
                                var2="days_vent_ecmo5 + days_vent_ecmo5^2",
-                      df= ecmo_patients))
-(shr_cannula_lumen <- univ_compete("cannula_lumen",
-                          df= ecmo_patients))
+                      df= ecmo_patients)
+shr_cannula_lumen <- univ_compete("cannula_lumen",
+                          df= ecmo_patients)
 # (shr_ac_before <- univ_compete("ac_before",df= data.ids0)) #all strokes had no AC before
-(shr_anticoagulants <- univ_compete("eotd_anticoagulants",
-                           df= data.ids0))
-(shr_obesity <- univ_compete( var= "comorbidity_obesity",df= ecmo_patients))
-(shr_vasoactive <- univ_compete("ecmo_vasoactive_drugs_before",
-                       df= ecmo_patients))
-(shr_diabetes <- univ_compete( var= "comorbidity_diabetes",df= ecmo_patients))
-(shr_cardiac <- univ_compete("comorbidity_chronic_cardiac_disease",
-                    df= ecmo_patients))
-(shr_hypertension <- univ_compete("comorbidity_hypertension",
-                         df= ecmo_patients))
+shr_anticoagulants <- univ_compete("eotd_anticoagulants",
+                           df= data.ids0)
+shr_obesity <- univ_compete( var= "comorbidity_obesity",df= ecmo_patients)
+shr_vasoactive <- univ_compete("ecmo_vasoactive_drugs_before",
+                       df= ecmo_patients)
+shr_diabetes <- univ_compete( var= "comorbidity_diabetes",df= ecmo_patients)
+shr_cardiac <- univ_compete("comorbidity_chronic_cardiac_disease",
+                    df= ecmo_patients)
+shr_hypertension <- univ_compete("comorbidity_hypertension",
+                         df= ecmo_patients)
 # (shr_neuro <- univ_compete("comorbidity_chronic_neurological_disorder",df= data.ids0))
-(shr_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
-                        var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients))
-(shr_sofa <- univ_compete(var= "sofa",var2="sofa + sofa^2" ,df= ecmo_patients))
-(shr_region <- univ_compete("income_region",
-                   df= ecmo_patients))
-(shr_era <- univ_compete("era",df= ecmo_patients))
+shr_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
+                        var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
+shr_sofa <- univ_compete(var= "sofa",var2="sofa + sofa^2" ,df= ecmo_patients)
+shr_region <- univ_compete("income_region",
+                   df= ecmo_patients)
+shr_era <- univ_compete("era",df= ecmo_patients)
 
 
 
@@ -443,10 +449,11 @@ hr_forest <- hr_data %>%
 
 ### forestplot
 
-shr_data <- data.frame(rbind(shr_ecmo,shr_age, shr_sex,shr_ethnic,
+shr_data <- data.frame(rbind(shr_ecmo,shr_age, shr_sex,shr_vent_ecmo,
+                             shr_ethnic,
                             shr_smoke, shr_obesity, 
                             shr_diabetes, shr_cardiac,hr_hypertension,
-                            shr_vent_ecmo,
+                            
                             shr_vasoactive,
                             shr_anticoagulants,
                             shr_cannula_lumen, 
@@ -499,18 +506,20 @@ shr_forest <- shr_data %>%
              title = "Stroke within 90 days of ECMO (death as competing risk)",
              xlog = F, 
              zero=1,
+             graph.pos=3,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 1.0),
+                              ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
              col = fpColors(box = "royalblue",
                             line = "darkblue"),
              vertices = TRUE,
              xlab="Subdistribution Hazard Ratio")
 
-# shr_forest
+shr_forest
 
 # ---- cox_CR ----
 ##combine the cox and Cr forestplots
+
 headerc <- tibble(Variable = c( "Variable","Variable"),
                   N=c("N","N"),
                   HR = c("subHR/HR (95% CI)","subHR/HR (95% CI)"),
@@ -539,14 +548,14 @@ all_forest <- surv_hr_data %>%
              line.margin = 0.5, #.2,
              boxsize = .25,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 1.0),
+                              ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
              col = fpColors(box = c("cyan4","darkorange1"),
                             line = c("cyan4","darkorange1")),
              vertices = TRUE,
              xlab="subHR/HR")
 
-# all_forest
+all_forest
 
 
 
