@@ -17,8 +17,8 @@ options(scipen=999) # avoid scientific presentation
 # options(out.height=10)
 # opts_knit$set(global.par = TRUE)
 
-
 ```
+
 
 ```{r, include = F}
 knitr::read_chunk("2_univariate_survival.R")
@@ -35,87 +35,23 @@ par(mar=c(5,5,5,0))
 
 ```
 
-# Risk factors for stroke in COVID-19 patients on Veno-Venous ECMO
+# Risk factors for haemorrhagic stroke in COVID-19 patients on Veno-Venous ECMO
 
-This document summarises the analysis of risk factors for stroke in COVID-19 patients treated with veno-venous ECMO. Patients entered the study on the first day of ECMO initiation and those who had a stroke previously were excluded. 
+This document summarises the analysis of risk factors for haemorrhagic and other types of stroke in COVID-19 patients treated with veno-venous ECMO. Patients entered the study on the first day of ECMO initiation and those who had a stroke previously were excluded. 
 
 There were `r length(unique(ecmo_patients$pin))` patients in the cohort.
 
-\newpage
-## Baseline characteristics
-
-```{r,  results='asis'}
-library(arsenal)
-library(labelled)
-mycontrols  <- tableby.control(test=FALSE, total=T,
-                               na.action=na.tableby(T),
-                               numeric.stats=c("Nmiss", "median", "q1q3"), #,"min","max"
-                               cat.stats=c("Nmiss","countpct"),
-                               stats.labels=list(Nmiss="Missing",q1q3='IQR'),
-                               digits=1, digits.p=2, digits.pct=1)
-
-ecmo_patients <- ecmo_patients %>%
-  mutate(stat = ifelse(as.character(status2) == "Censor",
-                          "Alive",as.character(status2)))
-
-vars <- c('age','sex','ethnicity'
-          ,'country',"income_group",
-          'bmi','apache_ii','sofa','pregnant'
-          ,"comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension'
-          ,'comorbidity_diabetes',"comorbidity_smoking","comorbidity_chronic_cardiac_disease"
-          ,"comorbidity_chronic_neurological_disorder"
-          ,'comorbidity_chronic_kidney_disease','comorbidity_chronic_alcohol_abuse_eot'
-          ,"comorbidity_malignant_neoplasm",'comorbidity_severe_liver_disease',
-          'income_region','era'
-          )
-
-
-tabdata = ecmo_patients %>%
-  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
-  #                                     as.character(complication_stroke))) %>%
-  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
-  select(all_of(vars)) %>%  #stroke_group4
-  set_variable_labels(age =  "Age",
-                     sex="Sex",
-                     ethnicity="Ethnicity",
-                     country='Country',
-                     income_group = "Economic Region",
-                     bmi='BMI',apache_ii='APACHE II',sofa='SOFA',
-                     pregnant='Pregnant',
-                     comorbidity_obesity = "Comorbid obesity" ,
-                     comorbidity_immuno='Comorbid immunosuppression',
-                     comorbidity_hypertension='Comorbid hypertension',
-                     comorbidity_diabetes='Comorbid diabetes',
-                     comorbidity_smoking="Comorbid smoking",
-                     comorbidity_chronic_cardiac_disease="Comorbid chronic cardiac disease",
-                     comorbidity_chronic_kidney_disease='Comorbid CKD',
-                     comorbidity_chronic_alcohol_abuse_eot='Comorbid alcohol abuse',
-                     comorbidity_chronic_neurological_disorder = 'Comorbid neurological disorder',
-                     comorbidity_malignant_neoplasm="Comorbid malignant neoplasm",
-                     comorbidity_severe_liver_disease='Comorbid severe liver disease',
-                     era="Pandemic Era",
-                     income_region = "Economic region"
-                      )
-
-
-
-
-formula <- as.formula(paste0("~", paste0(vars, collapse="+")))
-
-tab1 <- tableby(formula, data=tabdata, control=mycontrols)
-summary(tab1, title='Patient Characteristics') 
-
-
-
-```
 
 \newpage
 ## Patients pre ECMO respiratory support characteristics
 
 ```{r, results='asis'}
 
-#var_label(tabdata)
-##also include AC before, vasoactive before
+
+ecmo_patients <- ecmo_patients %>%
+  mutate(stat = ifelse(as.character(status_ICH) == "Censor",
+                          "Alive",as.character(status_ICH)))
+
 
 preecmo_vars <-c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
          "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
@@ -251,6 +187,7 @@ summary(tab5, title="Characteristics of ECMO support")
 
 ```{r, results='asis'}
 
+
 mycontrols  <- tableby.control(test=FALSE, total=T,
                                na.action=na.tableby(T),
                                numeric.stats=c( "median", "q1q3"), #,"min","max"
@@ -300,13 +237,13 @@ summary(tab4, title="Neurological complications")
 
 ```{r, results='asis'}
 
-
 mycontrols  <- tableby.control(test=FALSE, total=T,
                                na.action=na.tableby(T),
                                numeric.stats=c("Nmiss", "median", "q1q3"), #,"min","max"
                                cat.stats=c("Nmiss","countpct"),
                                stats.labels=list(Nmiss="Missing",q1q3='IQR'),
                                digits=1, digits.p=2, digits.pct=1)
+
 
 complic_vars <-c("complication_cardiac_arrest","complication_bacteraemia",
                  "complication_viral_pheumonitis","complication_bacterial_pneumonia",
@@ -355,23 +292,23 @@ summary(tab5, title="Other complications during ECMO run")
 \newpage
 ## Cumulative incidence of ECMO outcomes
 
-The following is a cumulative incidence plot for stroke and death. Most strokes occurred within 30 days of initiating ECMO.
+The following is a cumulative incidence plot for haemorrhagic stroke, other stroke and death. Most strokes occurred within 30 days of initiating ECMO.
 
-```{r ci_curve2,  fig.width=6}
-
+```{r ci_curve_ICH, fig.width=7}
 
 ```
 
 \newpage
 # Survival Analysis
-Initially, all types of strokes have been combined. If feasible, later analysis may consider haemorrhagic stroke as the outcome and treating cerebral ischaemia as a competing risk.
 
-Univariate analysis initially fitted models for the risk factors separately. hen multivariate models were fitted, including all the risk factors in the same model.
+The outcome of interest is haemorrhagic stroke. For the Cox survival models, other stroke types are censored on the day of stroke. In the competing risks models, other stroke types and death are treated as two separate competing risks. 
+
+Univariate analysis initially fitted models for the risk factors separately. Then multivariate models were fitted, including all the risk factors in the same model.
 
 Two types of models were used to estimate risk factors for stroke:
 
-- Cause specific for stroke
-- Stroke with death as a competing risk.
+- Cause specific for haemorrhagic stroke
+- Haemorrhagic stroke with death and other stroke types as competing risks.
 
 The risk factors considered were
 
@@ -388,24 +325,25 @@ The risk factors considered were
 - single vs double cannula
 - P/F ratio (log2-transformed)
 - SOFA at ICU admission (+ squared term)
-- ECMO (during vs after)
 - use of anticoagulants during ECMO (time-varying)
 - economic region (High vs Middle)
 - pandemic era
 
 Squared terms were added to age and days ventilated pre-ECMO to linearise the functional forms, however there was still some residual non-linearity.
 
-Co-morbid neurological conditions and use of anticoagulants before ECMo were not included, because models did not converge due to small numbers (there was only one stroke patient who had either of these risk factors).
+Only `r nrow(ecmo_patients %>% filter(date_ecmo_discontinued < complication_stroke_date, status_ICH == "Hemorrhagic Stroke"))` of haemorrhagic stroke and `r nrow(ecmo_patients %>% filter(date_ecmo_discontinued < complication_stroke_date, status_ICH == "Other stroke"))` other stroke patients had strokes after ECMO was discontinued, **therefore ECMO (during vs after) was not included as a risk factor.**
+
+Co-morbid neurological conditions and use of anticoagulants before ECMO were not included, because models did not converge due to small numbers (there was only one stroke patient who had either of these risk factors).
 
 \newpage
-## Cause specific models for any stroke 
+## Cause specific models for haemorrhagic stroke 
 
-Here the outcome is time to any type of stroke, censoring at death, discharge or 90 days after the initiation of ECMO, whichever comes first. Cox proportional hazards models were used to estimate hazard ratios (HRs) and 95% confidence intervals.
+Here the outcome is time to haemorrhagic stroke, censoring at death, date of other stroke, discharge or 90 days after the initiation of ECMO, whichever comes first. Cox proportional hazards models were used to estimate hazard ratios (HRs) and 95% confidence intervals.
 
 The univariate HR estimates have been combined into a forestplot.
 
 
-```{r uni_surv_stroke,  fig.width=9, fig.height=7}
+```{r uni_surv_ICH, fig.width=9, fig.height = 7}
 
 
 ```
@@ -413,14 +351,13 @@ The univariate HR estimates have been combined into a forestplot.
 \newpage
 ## Competing Risks
 
-Here the outcome is time to any type of stroke, treating death as a competing risk. Patients are censored at discharge or 90 days after the initiation of ECMO, which ever comes first. Fine-Gray models were used to estimate subdistribution hazard ratios (subHR) for the instantaneous risk for stroke.
-Fine-Gray model for stroke with death as a competing risk.
+Here the outcome is time to haemorrhagic stroke, treating death and other stroke types as separate competing risks. Patients are censored at discharge or 90 days after the initiation of ECMO, which ever comes first. Fine-Gray models were used to estimate subdistribution hazard ratios (subHR) for the instantaneous risk for haemorrhagic stroke.
+
+Fine-Gray model for haemorrhagic stroke with death as a competing risk.
 
 The univariate subHR estimates have been combined into a forestplot.
 
-```{r subHR, fig.width=9, fig.height=7}
-
-# out.width = "150%"
+```{r subHR_ICH,  fig.width=9, fig.height = 7}
 
 
 ```
@@ -428,7 +365,9 @@ The univariate subHR estimates have been combined into a forestplot.
 \newpage
 The cause specific and competing risk estimates have been combined into a single forestplot.
 
-```{r cox_CR, fig.width=9, fig.height = 7}
+```{r cox_CR_ICH,  fig.width=9, fig.height = 7}
+
+
 
 ```
 
@@ -442,28 +381,30 @@ Question: Although P/F ratio at ECMO initiation and SOFA were excluded, could us
 
 ```{r}
 
-knitr::read_chunk("3_multivariate_survival.R")
+knitr::read_chunk("3_multivariate_survival_ICH.R")
 
 ```
 
 ```{r survival_data}
 ```
 
-```{r multi_surv}
+```{r multi_surv_ICH}
 ```
 
-```{r multi_CR}
+```{r multi_CR_ICH}
 ```
 
 There were `r length(npat)` patients analysed who had `r survFit.p0$nevent` strokes.
 
 \newpage
 
-```{r multi_cox_CR, fig.width=9, fig.height = 7}
+```{r multi_cox_CR_ICH,fig.width=9, fig.height = 7} 
+#, fig.fullwidth=TRUE
+
 ```
 
-\newpage
-# Joint models
+
+# Competing risk joint models
 
 Joint models combine survival analysis with longitudinal models for the lab values (biomarkers). A Bayesian approach using the R package 'JMBayes2' was used to fit the joint models. Longitudinal models for the biomarkers were fitted with linear mixed models, allowing different longitudinal trajectories for during or post-ECMO and random intercepts and slopes. Since the analysis is Bayesian, the lower and upper limits represent 95% credible intervals.
 
@@ -481,49 +422,19 @@ Due to convergence issues, it was not possible to fit models using all the varia
 Two types of models were fitted, the first with a reduced number of covariates and the second with a more complete set of covariates.
 
 
-**Note: Due to the structure of the joint models, HRs from the cause specific Cox model may be biased and it is preferable to use the competing risks joint model.**
+This competing risk survival model creates separate strata for the different outcomes of hemorrhagic stroke, other stroke and death. It is NOT the Fine-Gray model used in the competing-risks survival model used above. Hazard Ratios are provided for both hemorrhagic stroke and death outcomes in the forestplot below. Since 95% CIs for other stroke were very wide due to small numbers, they have not been included in the forestplot.
 
+There were `r summary(jointFit1.CR)$n` patients analysed with `r summary(jointFit1.CR_ICH)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.CR_ICH)$events)` strokes and deaths.
 
 ```{r}
-knitr::read_chunk("5_JM_forest.R")
+
+knitr::read_chunk("5_JM_forest_ICH.R")
+
 ```
 
 ```{r jm_hr}
 ```
 
-
-\newpage
-## Joint Model 1
-There were `r summary(jfit_red_ridge)$n` patients analysed with `r summary(jfit_red_ridge)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jfit_red_ridge)$events)` strokes.
-
-
-```{r jm_forest_red_un, fig.width=9, fig.height=7}
-
-#out.width = "130%"
-#fig.fullwidth=TRUE
-```
-
-
-\newpage
-## Joint Model 2
-There were `r summary(jointFit1.p1)$n` patients analysed with `r summary(jointFit1.p1)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.p1)$events)` strokes.
-
-```{r jm_forest_un, fig.width=9, fig.height=7}
-#out.width = "130%"
-```
-
-\newpage
-# Competing Risks Joint Models
-## Stratifying by the competing risks
-
-This competing risk survival model creates separate strata for the different outcomes of stroke and death. It is NOT the Fine-Gray model used in the competing-risks survival model used above. Hazard Ratios are provided for both stroke and death outcomes in the forestplot below.
-
-There were `r summary(jointFit1.CR)$n` patients analysed with `r summary(jointFit1.CR)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.CR)$events)` strokes and deaths.
-
-**Note: It is preferable to use this competing risks joint model rather than the stroke specific joint models 1 & 2 above.**
-
-
-```{r jm_forest_CR, fig.width=9, fig.height=7}
-
+```{r jm_forest_CR_ICH,fig.width=9, fig.height = 7}
 ```
 

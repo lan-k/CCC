@@ -4,6 +4,7 @@
 rm(list=ls())
 library(forestplot)
 library(dplyr)
+library(stringr)
 source("99_functions.R")
 
 
@@ -16,11 +17,14 @@ jfit_red_ridge <- jointFitr
 # summary(jfit_red)
 # summary(jfit_red_ridge)
 
-load(file="Data/JM.Rdata")
+load(file="Data/JM_nosmoke_ethnic.Rdata") #excludes current smoker and white ethnicity
 # summary( jointFit1.p1)
 
+## CR
+load(file="Data/JM_CR_red.Rdata") 
+load( file="Data/JM_CR_red_ICH.Rdata")
 
-jm_hr <- function(jfit, jfitr) {
+jm_hr <- function(jfit, jfitr = NULL) {
   
   stab <- summary(jfit)$Survival
   jmtab <- data.frame(round(exp(stab[c(1,3,4)]),digits=3))
@@ -28,16 +32,21 @@ jm_hr <- function(jfit, jfitr) {
   jmtab$Variable = rownames(jmtab)
   jmtab$Penalty = "Unpenalized"
   
-  mean <-  exp(unlist(coef(jfitr)))
-  statsr <- jfitr$statistics
-  lower <- exp(unlist(list(statsr$CI_low$gammas, statsr$CI_low$alphas)))
-  upper <- exp(unlist(list(statsr$CI_upp$gammas, statsr$CI_upp$alphas)))
-  
-  jmtabr <- data.frame(cbind(mean, lower, upper))
-  jmtabr$Penalty = "Penalized"
-  jmtabr$Variable = jmtab$Variable
-  
-  hr <- bind_rows(jmtab,jmtabr)
+  if (!is.null(jfitr)) {
+    mean <-  exp(unlist(coef(jfitr)))
+    statsr <- jfitr$statistics
+    lower <- exp(unlist(list(statsr$CI_low$gammas, statsr$CI_low$alphas)))
+    upper <- exp(unlist(list(statsr$CI_upp$gammas, statsr$CI_upp$alphas)))
+    
+    jmtabr <- data.frame(cbind(mean, lower, upper))
+    jmtabr$Penalty = "Penalized"
+    jmtabr$Variable = jmtab$Variable
+    
+    hr <- bind_rows(jmtab,jmtabr)
+    
+  } else {
+    hr <- jmtab
+  }
   
   rownames(hr) <- c()
   
@@ -52,7 +61,7 @@ jm_hr <- function(jfit, jfitr) {
                               Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                               Variable =="ecmo_vasoactive_drugs_beforeYes" ~
                                 "Pre-ECMO vasoactive medicine use Yes vs No",
-                              Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO (change from 5)",
+                              Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                               Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                               Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                               Variable == "value(log2(pa_o2))" ~ "PaO2 (log2-transformed)",
@@ -243,6 +252,165 @@ jm_forest<- jm_hr_data %>%
              xlab="subHR/HR")
 
 jm_forest
+
+
+# ---- jm_forest_CR ----
+##reduced competing risks model
+## Does NOT use a Fine-Gray model
+## different strata for different outcomes
+
+
+jm_redu_CR <- jm_hr(jointFit1.CR)
+
+
+xticks <- c(0.01,.01, 0.02, 0.1, 0.2, 1, 2, 10, 20)
+xtlab <- rep(TRUE, length.out = length(xticks))
+attr(xticks, "labels") <- xtlab
+
+
+
+headercu <- tibble(Variable = c( "Variable", "Variable"),
+                   HR = c("HR (95% CI) Stroke, Death","HR (95% CI) Stroke, Death"),
+                   Outcome=c("Stroke","Death"))
+
+
+jm_hr_data_redu_CR=jm_redu_CR %>%
+  filter(!is.na(mean), Penalty == "Unpenalized") %>%
+  mutate(HR=paste0(roundz(mean, digits=3), " (",
+                   roundz(lower, digits=3),", ",
+                   roundz(upper, digits=3),")"),
+         Outcome = ifelse(grepl("Stroke", Variable), "Stroke", "Death"),
+         Variable = ifelse(grepl(":", Variable),str_extract(Variable, "^.*(?=(:))"),
+                           Variable),
+         Variable=case_when(Variable == "ecmo" ~"During vs post ECMO",
+                            Variable == "age" ~"Age",
+                            Variable == "sexMale" ~"Male vs Female",
+                            Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
+                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
+                            Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
+                            Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
+                            Variable =="ecmo_vasoactive_drugs_beforeYes" ~
+                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                            Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
+                            Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
+                            Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
+                            Variable == "value(log2(pa_o2))" ~ "PaO2 (log2-transformed)",
+                            Variable == "value(log2(pa_co2))" ~ "PaCO2 (log2-transformed)",
+                            Variable == "value(log2(platelet_count))" ~ "Platelet count (log2-transformed)",
+                            TRUE ~ Variable)) %>%
+  select(!Penalty) #%>%
+  #arrange(desc(Outcome), Variable)
+
+
+jm_hr_data_redu_CR=bind_rows(headercu,jm_hr_data_redu_CR) 
+
+jm_forest_redu_CR <- jm_hr_data_redu_CR %>% 
+  group_by(Outcome) %>%
+  forestplot(labeltext = c(Variable, HR), #
+             graph.pos=2,
+             clip=c(0.01, 20),
+             xticks = xticks, #c(.01, 0.02, 0.1, 0.2, 1, 2, 10),
+             title = "Stroke within 90 days of ECMO (death as competing risk)",
+             fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
+             xlog = T, 
+             zero=1,
+             # line.margin = 0.5, #.2,
+             boxsize = 0.1, #.25,
+             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
+                              ticks = gpar(cex = 0.8),
+                              xlab  = gpar(cex = 0.8)),
+             # col = fpColors(box = c("royalblue"),
+             #                line = c("darkblue")),
+             col = fpColors(box = c("cyan4","darkorange1"),
+                            line = c("cyan4","darkorange1")),
+             vertices = TRUE,
+             xlab="HR")
+
+jm_forest_redu_CR
+
+
+
+# ---- jm_forest_CR_ICH ----
+##reduced competing risks model
+## Does NOT use a Fine-Gray model
+## different strata for different outcomes
+
+
+jm_redu_CR_ICH <- jm_hr(jointFit1.CR_ICH)
+
+
+xticks <- c(0.01,.01, 0.02, 0.1, 0.2, 1, 2, 10, 20)
+xtlab <- rep(TRUE, length.out = length(xticks))
+attr(xticks, "labels") <- xtlab
+
+
+
+headercu <- tibble(Variable = c( "Variable", "Variable"),
+                   HR = c("HR (95% CI) Hemorrhagic Stroke, Death",
+                          "HR (95% CI) Hemorrhagic Stroke, Death"),
+                   Outcome=c("Hemorrhagic Stroke","Death"))
+
+
+jm_hr_data_redu_CR_ICH=jm_redu_CR_ICH %>%
+  filter(!is.na(mean), Penalty == "Unpenalized",
+         !grepl("Other stroke", Variable)) %>%  #exclude other strokes
+  mutate(HR=paste0(roundz(mean, digits=3), " (",
+                   roundz(lower, digits=3),", ",
+                   roundz(upper, digits=3),")"),
+         Outcome = ifelse(grepl("Stroke", Variable), "Hemorrhagic Stroke", "Death"),
+         Variable = ifelse(grepl(":", Variable),str_extract(Variable, "^.*(?=(:))"),
+                           Variable),
+         Variable=case_when(Variable == "ecmo" ~"During vs post ECMO",
+                            Variable == "age" ~"Age",
+                            Variable == "sexMale" ~"Male vs Female",
+                            Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
+                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
+                            Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
+                            Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
+                            Variable =="ecmo_vasoactive_drugs_beforeYes" ~
+                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                            Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
+                            Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
+                            Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
+                            Variable == "value(log2(pa_o2))" ~ "PaO2 (log2-transformed)",
+                            Variable == "value(log2(pa_co2))" ~ "PaCO2 (log2-transformed)",
+                            Variable == "value(log2(platelet_count))" ~ "Platelet count (log2-transformed)",
+                            TRUE ~ Variable)) %>%
+  select(!Penalty) #%>%
+#arrange(desc(Outcome), Variable)
+
+
+jm_hr_data_redu_CR_ICH=bind_rows(headercu,jm_hr_data_redu_CR_ICH) 
+
+jm_forest_redu_CR_ICH <- jm_hr_data_redu_CR_ICH %>% 
+  group_by(Outcome) %>%
+  forestplot(labeltext = c(Variable, HR), #
+             graph.pos=2,
+             clip=c(0.01, 20),
+             xticks = xticks, #c(.01, 0.02, 0.1, 0.2, 1, 2, 10),
+             title = "Hemorrhagic stroke within 90 days of ECMO (death as competing risk)",
+             fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
+             xlog = T, 
+             zero=1,
+             # line.margin = 0.5, #.2,
+             boxsize = 0.1, #.25,
+             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
+                              ticks = gpar(cex = 0.8),
+                              xlab  = gpar(cex = 0.8)),
+             # col = fpColors(box = c("royalblue"),
+             #                line = c("darkblue")),
+             col = fpColors(box = c("cyan4","darkorange1"),
+                            line = c("cyan4","darkorange1")),
+             vertices = TRUE,
+             xlab="HR")
+
+jm_forest_redu_CR_ICH
+
+
+
+
 
 
 

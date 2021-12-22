@@ -55,8 +55,10 @@ surv_vars3 <- c("age", "sex",
                # "cannula_lumen",
                # "income_region", 
                "era")
-
-
+##reduced set of covariates
+testvars <- c("age","days_vent_ecmo5","sex","ecmo",
+              "comorbidity_obesity", "ecmo_vasoactive_drugs_before",
+              "eotd_anticoagulants")
 
 jm_models <- function(
                       svars,lvar, lfunc,fForm=NULL,
@@ -189,7 +191,7 @@ ungroup() %>%
 
 
 # ---- plots ----
-plot(lowess(jmdat0$p_h_cent^2 ~ jmdat0$day))
+# plot(lowess(jmdat0$p_h_cent^2 ~ jmdat0$day))
 plot(lowess(log(jmdat0$pa_o2) ~ jmdat0$day))
 plot(lowess(log(jmdat0$pa_co2) ~ jmdat0$day))
 plot(lowess(log(jmdat0$platelet_count) ~ jmdat0$day))
@@ -197,9 +199,7 @@ plot(lowess(jmdat0$haemoglobin ~ jmdat0$day))
 
 # ---- univ_jm_model ----
 
-testvars <- c("age","days_vent_ecmo5","sex","ecmo",
-              "comorbidity_obesity", "ecmo_vasoactive_drugs_before",
-                "eotd_anticoagulants")
+
 # (jm_ph <- jm_models( svars = testvars,"p_h", "p_h", #surv_vars2
 #                       n_iter = 1000L, n_burnin = 100L) ) #wide CI for pH
 # exp(summary(jm_ph)$Survival[c(1,3,4)])
@@ -262,6 +262,7 @@ exp(summary(jm_hbabs)$Survival[c(1,3,4)])
 
 ##remove missing data
 #remove rows with missing data
+##choose either testvars or surv_vars2
 jmdat <- jmdat0  %>% 
   select(pin,  all_of(biomarkers2),abshb, all_of(testvars), #surv_vars2
          any_stroke,  status,
@@ -305,8 +306,8 @@ lmeFit.p3 <- lme(log2(pa_co2) ~ day + ecmo:day  ,
 lmeFit.p4 <- lme(log2(platelet_count) ~ day + ecmo:day  ,
                  data = jmdat, random = ~ day | pin)
 
-lmeFit.p5 <- lme(abshb ~ day + ecmo:day  ,  #haemoglobin
-                 data = jmdat, random = ~ day | pin)
+# lmeFit.p5 <- lme(abshb ~ day + ecmo:day  ,  #haemoglobin
+#                  data = jmdat, random = ~ day | pin)
 
 # lmeFit.p6 <- lme(log(pa_o2_fi_o2) ~ day + ecmo:day  ,
 #                  data = jmdat, random = ~ day | pin)
@@ -358,7 +359,8 @@ coefs <- cbind("un-penalized" = unlist(coef(jointFit1.p1)),
 
 exp(coefs[,c(1,2)]) #almost no difference
 
-# save(jointFit1.p1,jointFitr,  file="Data/JM_reduced.Rdata")
+# save(jointFit1.p1,jointFitr,  file="Data/JM_reduced.Rdata")  #uses testvars as covariates
+# save(jointFit1.p1,jointFitr,  file="Data/JM.Rdata")  #uses surv_vars2 as covariates
 
 # ---- full_multi_jm_model ----
 ### with full covariates
@@ -444,8 +446,8 @@ save(jointFit1.p2, jointFitr2, file="Data/JM2.Rdata")
 # ---- jm_model_CR ----
 ####competing risks version
 
-data.CR <- data.ids %>% select(all_of(surv_vars2), tstop, tstart, status2, pin, site_name) %>%
-  rename(status=status2)
+data.CR <- data.ids %>% select(all_of(testvars), tstop, tstart, status2, pin, site_name) %>%
+  rename(status=status2)  #surv_vars2
 data.CR <- crLong(data.CR, 
                   statusVar = "status",
                   censLevel = "Alive", nameStrata = "CR")
@@ -461,12 +463,12 @@ data.CR <- crLong(data.CR,
 #                     + cluster(pin, site_name)
 # )
 
-sform3 = as.formula(
+sform.CR = as.formula(
   paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo + age^2 + days_vent_ecmo5^2 + "
-         , paste0(surv_vars2, collapse="+"),")*strata(CR)"))
+         , paste0(testvars, collapse="+"),")*strata(CR)"))  #surv_vars2
 
-survFit.CR <- coxph(sform3 ,id=pin, data = data.CR)
-summary(survFit.p3)
+survFit.CR <- coxph(sform.CR ,id=pin, data = data.CR)
+summary(survFit.CR)
 
 
                    
@@ -474,32 +476,65 @@ summary(survFit.p3)
 # the CR joint model
 
 CR_forms <- list(
-  "log(pa_o2)" = ~ value(log(pa_o2)):CR,
-  "log(pa_co2)" = ~ value(log(pa_co2)):CR,
-  "log(platelet_count)" = ~ value(log(platelet_count)):CR,
-  "haemaglobin" = ~ value(haemaglobin):CR
+  "log2(pa_o2)" = ~ value(log2(pa_o2)):CR
+  ,"log2(pa_co2)" = ~ value(log2(pa_co2)):CR
+  ,"log2(platelet_count)" = ~ value(log2(platelet_count)):CR
+  # ,"haemoglobin" = ~ value(haemoglobin):CR
 )
-jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4,  lmeFit.p5), 
+jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFit.p5
                    time_var = "day",
                    functional_forms = CR_forms
                    ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L) #,n_iter = 10000L, n_burnin = 1000L)
 
 summary(jointFit1.CR)
 (stab.CR <- summary(jointFit1.CR)$Survival)
-jtab.CR <- round(exp(stab.CR[c(1,3,4)]),digits=3)
+(jtab.CR <- round(exp(stab.CR[c(1,3,4)]),digits=3))
+
+save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars
 
 ##shrink CR coefficients
-jointFit.CR2 <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) #horseshoe
+# jointFit.CR2 <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) #horseshoe
+# 
+# 
+# coefs.CR <- cbind("un-penalized" = unlist(coef(jointFit1.CR)), 
+#                "penalized" = unlist(coef(jointFit.CR2)))
+# 
+# exp(coefs.CR[,c(1,2)]) #almost no difference
+# exp(unlist(confint(jointFit1.CR)))
 
 
-coefs.CR <- cbind("un-penalized" = unlist(coef(jointFit1.CR)), 
-               "penalized" = unlist(coef(jointFit.CR2)))
+# ---- jm_model_FG_CR ----
 
-exp(coefs.CR[,c(1,2)]) #almost no difference
-exp(unlist(confint(jointFit1.CR)))
+##Uses Fine-Gray model
+data.FG <- data.ids %>% select(all_of(testvars), tstop, tstart, status2, pin, site_name) 
+
+etime1 <- data.FG$tstart
+etime2 <- data.FG$tstop
+event <- data.FG %>% pull(status2)
 
 
+data.FG <- data.FG %>% select(pin, status2,tstart,tstop,  site_name, all_of(testvars))
+crdata <- finegray(Surv(etime1, etime2, event) ~ ., data=data.FG,id=pin,
+                   etype="Stroke")  
+#creates the Fine-Gray weights for stroke as the event
 
+form.FG = as.formula(paste0(
+          "Surv(fgstart, fgstop, fgstatus) ~ cluster(site_name) + age^2 + days_vent_ecmo5^2 +",
+          paste0(testvars, collapse="+")))
+survFit.FG <- coxph( form.FG, id=pin,weight=fgwt,
+              data=crdata)
+summary(survFit.FG)
 
+jointFit.FG <- jm(survFit.FG, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFit.p5
+                   time_var = "day"
+                   ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L) 
+                  #,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L
+
+summary(jointFit.FG)
+(stab.FG <- summary(jointFit.FG)$Survival)
+(jtab.FG <- round(exp(stab.FG[c(1,3,4)]),digits=3))
+
+save(jointFit.FG, file="Data/JM_FG_CR_red.Rdata") #uses testvars  
+#no model fit stats   - non convergence?
 
 
