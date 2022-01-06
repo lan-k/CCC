@@ -26,6 +26,8 @@ biomarkers2 <- c("platelet_count"
 
 surv_vars2 <- c("age", "sex", "ecmo",
                 # "pin", "site_name",
+                "ethnic_white",
+                "current_smoker",
                 "comorbidity_obesity",
                 "comorbidity_hypertension",
                 "comorbidity_diabetes",
@@ -53,7 +55,7 @@ surv_vars3 <- c("age", "sex",
                "eotd_anticoagulants",
                "days_vent_ecmo5",
                # "cannula_lumen",
-               # "income_region", 
+               "income_region",
                "era")
 ##reduced set of covariates
 testvars <- c("age","days_vent_ecmo5","sex","ecmo",
@@ -264,7 +266,7 @@ exp(summary(jm_hbabs)$Survival[c(1,3,4)])
 #remove rows with missing data
 ##choose either testvars or surv_vars2
 jmdat <- jmdat0  %>% 
-  select(pin,  all_of(biomarkers2),abshb, all_of(testvars), #surv_vars2
+  select(pin,  all_of(biomarkers2),abshb, all_of(testvars ), # surv_vars3
          any_stroke,  status,
          ecmo, day)  %>%
   # select(!c(d_dimer, il_6, aptt,logappt60, inr,eotd_peep,pa_o2_fi_o2,
@@ -275,6 +277,8 @@ ids <- jmdat$pin %>% unique()
 data.ids <- data.ids0[data.ids0$pin %in% ids,]
 check <- data.ids %>% select(pin, day, prev_day, next_day, tstart, tstop,  days_fup)
 
+
+
 length(unique(jmdat$pin))  #389
 
 length(unique(data.ids$pin))  
@@ -283,6 +287,13 @@ table(data.ids$any_stroke, useNA = "always")
 
 table(data.ids$status, data.ids$status2) #43 strokes reduced to 35 after removing missing data
 
+check2 <- data.ids %>% 
+  group_by(pin) %>%
+  mutate(any_post_ecmo = min(ecmo)) %>%
+  filter(day==max(day))
+
+
+table(check2$any_post_ecmo, check2$status2)
 
 # the joint model
 
@@ -324,7 +335,7 @@ ftable(sex ~ comorbidity_obesity + ecmo_vasoactive_drugs_before, data=ecmo_patie
 ##survival model using data from longitudinal model
 sform = as.formula(
   paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo + age^2 + days_vent_ecmo5^2 + " #
-         , paste0(testvars, collapse="+")))  #surv_vars2
+         , paste0(testvars, collapse="+")))  #  surv_vars2 surv_vars3
 survFit.p1 <- coxph(sform , 
                     data = data.ids, id=pin)
 summary(survFit.p1)
@@ -352,6 +363,11 @@ summary(jointFit1.p1)
 stab <- summary(jointFit1.p1)$Survival
 (jmtab <- round(exp(stab[c(1,3,4)]),digits=3))
 
+## check convergence
+
+ggtraceplot(jointFit1.p1, "alphas")
+ggdensityplot(jointFit1.p1, "alphas")
+
 ##shrink coefficients
 jointFitr <- update(jointFit1.p1, priors = list("penalty_alphas" = "ridge")) #horseshoe
 coefs <- cbind("un-penalized" = unlist(coef(jointFit1.p1)), 
@@ -360,7 +376,8 @@ coefs <- cbind("un-penalized" = unlist(coef(jointFit1.p1)),
 exp(coefs[,c(1,2)]) #almost no difference
 
 # save(jointFit1.p1,jointFitr,  file="Data/JM_reduced.Rdata")  #uses testvars as covariates
-# save(jointFit1.p1,jointFitr,  file="Data/JM.Rdata")  #uses surv_vars2 as covariates
+# save(jointFit1.p1,jointFitr,  file="Data/JM.Rdata")  #uses surv_vars2 as covariates, very wide CIs
+# save(jointFit1.p1,jointFitr,  file="Data/JM_nosmoke_ethnic.Rdata")  #uses surv_vars3 as covariates
 
 # ---- full_multi_jm_model ----
 ### with full covariates
@@ -484,13 +501,24 @@ CR_forms <- list(
 jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFit.p5
                    time_var = "day",
                    functional_forms = CR_forms
-                   ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L) #,n_iter = 10000L, n_burnin = 1000L)
+                   # ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L
+                   # ,n_iter = 50000L, n_burnin = 10000L, n_thin = 10L, n_chains=4
+                   ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4
+                   ) #,n_iter = 10000L, n_burnin = 1000L)
 
 summary(jointFit1.CR)
 (stab.CR <- summary(jointFit1.CR)$Survival)
 (jtab.CR <- round(exp(stab.CR[c(1,3,4)]),digits=3))
 
-save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars
+ggtraceplot(jointFit1.CR, "alphas",grid = TRUE, size=0.5)
+ggdensityplot(jointFit1.CR, "alphas",grid = TRUE, size=0.5)
+ggdensityplot(jointFit1.CR, "betas",grid = TRUE, size=0.5)
+ggdensityplot(jointFit1.CR, "all",grid = TRUE, size=0.5)
+
+# save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars and 25k iterations
+# save(jointFit1.CR, file="Data/JM_CR_red_50kit.Rdata")
+save(jointFit1.CR, file="Data/JM_CR_red_75kit.Rdata")
+
 
 ##shrink CR coefficients
 # jointFit.CR2 <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) #horseshoe
@@ -501,6 +529,9 @@ save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars
 # 
 # exp(coefs.CR[,c(1,2)]) #almost no difference
 # exp(unlist(confint(jointFit1.CR)))
+
+
+# ---- jm_model_CR_no_ecmo ----
 
 
 # ---- jm_model_FG_CR ----
@@ -536,5 +567,6 @@ summary(jointFit.FG)
 
 save(jointFit.FG, file="Data/JM_FG_CR_red.Rdata") #uses testvars  
 #no model fit stats   - non convergence?
+
 
 

@@ -49,7 +49,7 @@ univ <- function(var,var2=var, outcome= "any_stroke", df) {
   
   form = as.formula(paste0("Surv(tstart, tstop,", outcome," ) ~ cluster(site_name) + ",var2))
   fit <- coxph( form, id=pin,
-               data=df)
+                data=df)
   
   est <- fit$coefficients
   se <- sqrt(diag(fit$var))
@@ -57,7 +57,7 @@ univ <- function(var,var2=var, outcome= "any_stroke", df) {
   upper = est + 1.96 * se
   N = length(unique(df %>% filter(!is.na(across(all_of(var)))) %>% pull(pin)))
   hr <- cbind(N,exp(cbind(est, lower, upper)))
-    
+  
   return(round(hr, digits=3))
   
 }
@@ -90,10 +90,10 @@ univ_compete <- function(var,var2=var,stat=status2, stype="Stroke", df) {
   # event <- df$status2 
   #(0=censored, 1 = stroke, 2= death) OR
   #(0=censored, 1 = ICH stroke, 2= other stroke, 3= death) OR
-
+  
   df <- df %>% select(pin, {{stat}},tstart,tstop,  site_name, all_of(var))
   crdata <- finegray(Surv(etime1, etime2, event) ~ ., data=df,id=pin,
-                       etype=stype)  
+                     etype=stype)  
   #creates the Fine-Gray weights for stroke as the event
   
   
@@ -145,6 +145,8 @@ ecmo_patients <- ecmo_patients %>%
          group="ECMO patients",
          sex=relevel(factor(sex), ref="Female"),
          age50=age-50,
+         rel_o2_plus50 = ifelse(!is.na(rel_delta_o2),rel_delta_o2 > 0.5, NA),
+         rel_co2_neg50 = ifelse(!is.na(rel_delta_co2),rel_delta_co2 < -0.5, NA),
          current_smoker = relevel(factor(case_when(comorbidity_smoking== "Current Smoker" ~ "Yes",
                                                    !is.na(comorbidity_smoking) ~ "No")),ref="No"),
          ever_smoker = relevel(factor(case_when(comorbidity_smoking %in% c("Current Smoker",
@@ -179,7 +181,10 @@ ecmo_daily <- ecmo_patients %>%
          status, status_ICH,stroke_ICH,
          ac_before, era,
          any_stroke,comp_stroke_death,
-         delta_o2, delta_co2,days_vent_ecmo, days_vent_ecmo5, 
+         delta_o2, delta_co2,
+         rel_delta_o2, rel_delta_co2,
+         rel_o2_plus50,rel_co2_neg50,
+         days_vent_ecmo, days_vent_ecmo5, 
          ecmo_worst_pa_o2_fi_o2_before, age50,
          current_smoker, ethnic_white, pregnant,era1_0, era2_1 )  %>% 
   left_join(combined_ecmo %>% select(!c(days_vent_ecmo, pregnant)) %>%
@@ -328,11 +333,11 @@ fitci <- cuminc(ftime = ecmo_patients$days_fup, fstatus = ecmo_patients$status2,
                 cencode = "Alive")
 
 ci <- ggcompetingrisks(fitci, palette = "Dark2",
-                 legend = "top",
-                 ggtheme = theme_bw(),
-                 xlab = "Days since ECMO",
-                 # multiple_panels = F,
-                 conf.int = T)
+                       legend = "top",
+                       ggtheme = theme_bw(),
+                       xlab = "Days since ECMO",
+                       # multiple_panels = F,
+                       conf.int = T)
 
 
 # ---- ci_curve1 ----
@@ -348,10 +353,10 @@ fit2 <- survfit(Surv(days_fup, status2, type="mstate") ~ group,
                 data=ecmo_patients)
 
 g2 <- ggcompetingrisks(fit2,
-                 ggtheme = theme_cowplot(),
-                 group=group,
-                 xlab = "Days since ECMO initiation",
-                 title="Cumulative Incidence")  + 
+                       ggtheme = theme_cowplot(),
+                       group=group,
+                       xlab = "Days since ECMO initiation",
+                       title="Cumulative Incidence")  + 
   scale_fill_jco(labels=c("Alive", "Death","Stroke"))
 
 
@@ -362,14 +367,14 @@ g2
 ##test linearity of continuous variables
 tdat <- data.ids0 %>% 
   select(pin, tstart, tstop, any_stroke,ecmo_worst_pa_o2_fi_o2_before,
-        sofa,
-        age, age50, days_vent_ecmo, days_vent_ecmo5) %>%
+         sofa,
+         age, age50, days_vent_ecmo, days_vent_ecmo5) %>%
   mutate(days_vent_ecmo6 = days_vent_ecmo - 6,
          days_vent_ecmo4 = days_vent_ecmo - 4) %>%
   na.omit()
 tfit <-  coxph(Surv(tstart, tstop, any_stroke) ~ 
-                I(age+age^2 )
-                + I(age50 + age50^2)
+                 I(age+age^2 )
+               + I(age50 + age50^2)
                # log(age) + log(age)^2
                + I(days_vent_ecmo + sqrt(days_vent_ecmo))
                +  log2(days_vent_ecmo)
@@ -393,10 +398,12 @@ xtlab <- rep(TRUE, length.out = length(xticks))
 attr(xticks, "labels") <- xtlab
 
 hr_ecmo <- univ("ecmo", df= data.ids0e)
-hr_age <- univ(var="age",var2="age + age^2",df= ecmo_patients)
+hr_age <- univ(var="age",#var2="age + age^2",
+               df= ecmo_patients)
 hr_sex <- univ("sex",df= ecmo_patients)
 hr_vent_ecmo <- univ(var="days_vent_ecmo5",
-                      var2="days_vent_ecmo5 + days_vent_ecmo5^2",df= ecmo_patients)
+                     # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                     df= ecmo_patients)
 hr_ethnic <- univ("ethnic_white",df= ecmo_patients)
 hr_smoke <- univ("current_smoker",df= ecmo_patients)
 hr_cannula_lumen <- univ("cannula_lumen",df= ecmo_patients)
@@ -411,7 +418,10 @@ hr_cardiac <- univ("comorbidity_chronic_cardiac_disease",df= ecmo_patients)
 hr_hypertension <- univ("comorbidity_hypertension",df= ecmo_patients)
 hr_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
               var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
-hr_sofa <- univ(var="sofa",var2="sofa + sofa^2",df= ecmo_patients)
+hr_sofa <- univ(var="sofa",#var2="sofa + sofa^2",
+                df= ecmo_patients)
+hr_rel_o2_plus50 <- univ(var="rel_o2_plus50",df= ecmo_patients)
+hr_rel_co2_neg50 <- univ(var="rel_co2_neg50",df= ecmo_patients)
 hr_region <- univ("income_region",df= ecmo_patients)
 hr_era <- univ("era",df= ecmo_patients)
 # (hr_era1_0 <- univ("era1_0",df= ecmo_patients))
@@ -433,8 +443,10 @@ hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,
                             hr_cannula_lumen, 
                             hr_pf,
                             hr_sofa,
+                            hr_rel_o2_plus50,
+                            hr_rel_co2_neg50, 
                             hr_region, hr_era
-                 )) %>%
+)) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
   mutate(HR=paste0(roundz(mean, digits=2), " (",
                    roundz(lower, digits=2),", ",
@@ -442,7 +454,7 @@ hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,
          N=as.character(N))
 hr_data$Variable = rownames(hr_data)
 rownames(hr_data) <- c()
-  
+
 ##nice labels
 hr_data <- hr_data %>%
   mutate(Variable=case_when(Variable == "ecmo" ~"During vs post ECMO",
@@ -463,6 +475,8 @@ hr_data <- hr_data %>%
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
                             Variable == "sofa" ~"SOFA",
+                            Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
+                            Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             TRUE ~ Variable))
@@ -495,32 +509,36 @@ hr_forest
 
 # ---- subHR ----
 shr_ecmo <- univ_compete("ecmo", df= data.ids0e)
-shr_age <- univ_compete(var="age", var2="age + age^2",df= ecmo_patients)
+shr_age <- univ_compete(var="age", #var2="age + age^2",
+                        df= ecmo_patients)
 shr_sex <- univ_compete("sex",df= ecmo_patients)
 shr_ethnic <- univ_compete("ethnic_white",df= ecmo_patients)
 shr_smoke <- univ_compete("current_smoker",df= ecmo_patients)
 shr_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
-                               var2="days_vent_ecmo5 + days_vent_ecmo5^2",
-                      df= ecmo_patients)
+                              # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                              df= ecmo_patients)
 shr_cannula_lumen <- univ_compete("cannula_lumen",
-                          df= ecmo_patients)
+                                  df= ecmo_patients)
 # (shr_ac_before <- univ_compete("ac_before",df= data.ids0)) #all strokes had no AC before
 shr_anticoagulants <- univ_compete("eotd_anticoagulants",
-                           df= data.ids0)
+                                   df= data.ids0)
 shr_obesity <- univ_compete( var= "comorbidity_obesity",df= ecmo_patients)
 shr_vasoactive <- univ_compete("ecmo_vasoactive_drugs_before",
-                       df= ecmo_patients)
+                               df= ecmo_patients)
 shr_diabetes <- univ_compete( var= "comorbidity_diabetes",df= ecmo_patients)
 shr_cardiac <- univ_compete("comorbidity_chronic_cardiac_disease",
-                    df= ecmo_patients)
+                            df= ecmo_patients)
 shr_hypertension <- univ_compete("comorbidity_hypertension",
-                         df= ecmo_patients)
+                                 df= ecmo_patients)
 # (shr_neuro <- univ_compete("comorbidity_chronic_neurological_disorder",df= data.ids0))
 shr_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
-                        var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
-shr_sofa <- univ_compete(var= "sofa",var2="sofa + sofa^2" ,df= ecmo_patients)
+                       var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
+shr_sofa <- univ_compete(var= "sofa",#var2="sofa + sofa^2" ,
+                         df= ecmo_patients)
+shr_rel_o2_plus50 <- univ_compete(var="rel_o2_plus50",df= ecmo_patients)
+shr_rel_co2_neg50 <- univ_compete(var="rel_co2_neg50",df= ecmo_patients)
 shr_region <- univ_compete("income_region",
-                   df= ecmo_patients)
+                           df= ecmo_patients)
 shr_era <- univ_compete("era",df= ecmo_patients)
 
 
@@ -531,21 +549,23 @@ shr_era <- univ_compete("era",df= ecmo_patients)
 
 shr_data <- data.frame(rbind(shr_ecmo,shr_age, shr_sex,shr_vent_ecmo,
                              shr_ethnic,
-                            shr_smoke, shr_obesity, 
-                            shr_diabetes, shr_cardiac,
-                            shr_hypertension,
-                            
-                            shr_vasoactive,
-                            shr_anticoagulants,
-                            shr_cannula_lumen, 
-                            shr_pf,
-                            shr_sofa,
-                            shr_region, shr_era
+                             shr_smoke, shr_obesity, 
+                             shr_diabetes, shr_cardiac,
+                             shr_hypertension,
+                             
+                             shr_vasoactive,
+                             shr_anticoagulants,
+                             shr_cannula_lumen, 
+                             shr_pf,
+                             shr_sofa,
+                             shr_rel_o2_plus50,
+                             shr_rel_co2_neg50,
+                             shr_region, shr_era
 )) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
   mutate(sHR=paste0(roundz(mean, digits=2), " (",
-                   roundz(lower, digits=2),", ",
-                   roundz(upper, digits=2),")"),
+                    roundz(lower, digits=2),", ",
+                    roundz(upper, digits=2),")"),
          N=as.character(N))
 shr_data$Variable = rownames(shr_data)
 rownames(shr_data) <- c()
@@ -570,13 +590,15 @@ shr_data <- shr_data %>%
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
                             Variable == "sofa" ~"SOFA",
+                            Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
+                            Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             TRUE ~ Variable))
 
 headerc <- tibble(Variable = c("", "Variable"),
                   N=c("","N"),
-                 sHR = c("", "subHR (95% CI)"))
+                  sHR = c("", "subHR (95% CI)"))
 
 
 
@@ -613,8 +635,8 @@ shr_data2 <- shr_data %>%
   mutate(HR=paste0(" ",sHR))
 
 surv_hr_data=bind_rows(shr_data2 %>% select(!sHR) %>% mutate(Model = "Competing Risks"),
-                      hr_data  %>% mutate(Model = "Cox") #%>% select(!HR)
-                       ) %>%
+                       hr_data  %>% mutate(Model = "Cox") #%>% select(!HR)
+) %>%
   filter(!is.na(mean))
 
 surv_hr_data=bind_rows(headerc,surv_hr_data)
@@ -652,12 +674,12 @@ death = 'black'
 
 
 fit_ICH <- survfit(Surv(days_fup, status_ICH, type="mstate") ~ group, 
-                data=ecmo_patients)
+                   data=ecmo_patients)
 g_ICH <- ggcompetingrisks(fit_ICH,
-                 ggtheme = theme_cowplot(),
-                 group=group,
-                 xlab = "Days since ECMO initiation",
-                 title="Cumulative Incidence")  + 
+                          ggtheme = theme_cowplot(),
+                          group=group,
+                          xlab = "Days since ECMO initiation",
+                          title="Cumulative Incidence")  + 
   # scale_fill_manual(values=c(discharge,death,stroke_h,stroke_i),
   #   labels=c("Alive", "Death","Hemorrhagic Stroke","Other Stroke"))
   scale_fill_jco(labels=c("Alive", "Death","Hemorrhagic Stroke","Other Stroke"))
@@ -672,11 +694,12 @@ xtlab <- rep(TRUE, length.out = length(xticks))
 attr(xticks, "labels") <- xtlab
 
 # hr_i_ecmo <- univ("ecmo",outcome="stroke_ICH", df= data.ids0e)  #small numbers
-hr_i_age <- univ(var="age",var2="age + age^2",outcome="stroke_ICH",df= ecmo_patients)
+hr_i_age <- univ(var="age",#var2="age + age^2",
+                 outcome="stroke_ICH",df= ecmo_patients)
 hr_i_sex <- univ("sex",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_vent_ecmo <- univ(var="days_vent_ecmo5",
-                     var2="days_vent_ecmo5 + days_vent_ecmo5^2",outcome="stroke_ICH",
-                     df= ecmo_patients)
+                       # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                       outcome="stroke_ICH",df= ecmo_patients)
 hr_i_ethnic <- univ("ethnic_white",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_smoke <- univ("current_smoker",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_cannula_lumen <- univ("cannula_lumen",outcome="stroke_ICH",df= ecmo_patients)
@@ -690,8 +713,11 @@ hr_i_cardiac <- univ("comorbidity_chronic_cardiac_disease",outcome="stroke_ICH",
 # (hr_i_pregnant <- univ("pregnant",outcome="stroke_ICH",df= data.ids0))
 hr_i_hypertension <- univ("comorbidity_hypertension",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
-              var2="log2(ecmo_worst_pa_o2_fi_o2_before)",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_sofa <- univ(var="sofa",var2="sofa + sofa^2",outcome="stroke_ICH",df= ecmo_patients)
+                var2="log2(ecmo_worst_pa_o2_fi_o2_before)",outcome="stroke_ICH",df= ecmo_patients)
+hr_i_sofa <- univ(var="sofa",#var2="sofa + sofa^2",
+                  outcome="stroke_ICH",df= ecmo_patients)
+hr_i_rel_o2_plus50 <- univ(var="rel_o2_plus50",outcome="stroke_ICH",df= ecmo_patients)
+hr_i_rel_co2_neg50 <- univ(var="rel_co2_neg50",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_region <- univ("income_region",outcome="stroke_ICH",df= ecmo_patients)
 hr_i_era <- univ("era",outcome="stroke_ICH",df= ecmo_patients)
 
@@ -701,20 +727,22 @@ hr_i_era <- univ("era",outcome="stroke_ICH",df= ecmo_patients)
 ### forestplot
 
 hr_i_data <- data.frame(rbind(#hr_i_ecmo,
-                              hr_i_age, hr_i_sex,
-                            hr_i_vent_ecmo,
-                            hr_i_ethnic,
-                            hr_i_smoke, hr_i_obesity, 
-                            hr_i_diabetes, hr_i_cardiac,
-                            hr_i_hypertension, 
-                            # hr_i_neuro,
-                            hr_i_vasoactive,
-                           # hr_i_ac_before,
-                            hr_i_anticoagulants,
-                            hr_i_cannula_lumen, 
-                            hr_i_pf,
-                            hr_i_sofa,
-                            hr_i_region, hr_i_era
+  hr_i_age, hr_i_sex,
+  hr_i_vent_ecmo,
+  hr_i_ethnic,
+  hr_i_smoke, hr_i_obesity, 
+  hr_i_diabetes, hr_i_cardiac,
+  hr_i_hypertension, 
+  # hr_i_neuro,
+  hr_i_vasoactive,
+  # hr_i_ac_before,
+  hr_i_anticoagulants,
+  hr_i_cannula_lumen, 
+  hr_i_pf,
+  hr_i_sofa,
+  hr_i_rel_o2_plus50,
+  hr_i_rel_co2_neg50,
+  hr_i_region, hr_i_era
 )) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
   mutate(HR=paste0(roundz(mean, digits=2), " (",
@@ -727,29 +755,31 @@ rownames(hr_i_data) <- c()
 ##nice labels
 hr_i_data <- hr_i_data %>%
   mutate(Variable=case_when(#Variable == "ecmo" ~"During vs post ECMO",
-                            Variable == "age" ~"Age",
-                            Variable == "sexMale" ~"Male vs Female",
-                            Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
-                            Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
-                            Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
-                            Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
-                            Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
-                            Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
-                              "Co-morbid Cardiac Disease Yes vs No",
-                            Variable == "comorbidity_chronic_neurological_disorderYes" ~
-                              "Co-morbid Chronic Neurological Disorder Yes vs No",
-                            Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
-                            Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
-                            Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
-                            Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
-                            Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
-                            Variable == "sofa" ~"SOFA",
-                            Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
-                            Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
-                            TRUE ~ Variable))
+    Variable == "age" ~"Age",
+    Variable == "sexMale" ~"Male vs Female",
+    Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
+    Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
+    Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
+    Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+    Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
+    Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
+    Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
+      "Co-morbid Cardiac Disease Yes vs No",
+    Variable == "comorbidity_chronic_neurological_disorderYes" ~
+      "Co-morbid Chronic Neurological Disorder Yes vs No",
+    Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
+    Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
+    Variable =="ecmo_vasoactive_drugs_beforeYes" ~
+      "Pre-ECMO vasoactive medicine use Yes vs No",
+    Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
+    Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
+    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+    Variable == "sofa" ~"SOFA",
+    Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
+    Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+    Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
+    Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
+    TRUE ~ Variable))
 
 header <- tibble(Variable = c("", "Variable"),
                  N = c("","N"),
@@ -787,45 +817,51 @@ shr_i_ethnic <- univ_compete("ethnic_white",stat=status_ICH, stype="Hemorrhagic 
 shr_i_smoke <- univ_compete("current_smoker",stat=status_ICH, stype="Hemorrhagic Stroke",
                             df= ecmo_patients)
 shr_i_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
-                              var2="days_vent_ecmo5 + days_vent_ecmo5^2",
-                              stat=status_ICH, stype="Hemorrhagic Stroke",
-                              df= ecmo_patients)
+                                var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                                stat=status_ICH, stype="Hemorrhagic Stroke",
+                                df= ecmo_patients)
 shr_i_cannula_lumen <- univ_compete("cannula_lumen",
                                     stat=status_ICH, stype="Hemorrhagic Stroke",
-                                  df= ecmo_patients)
+                                    df= ecmo_patients)
 # shr_i_ac_before <- univ_compete("ac_before",stat=status_ICH, stype="Hemorrhagic Stroke",
 #                                 df= data.ids0) 
 shr_i_anticoagulants <- univ_compete("eotd_anticoagulants",
                                      stat=status_ICH, stype="Hemorrhagic Stroke",
-                                   df= data.ids0a)
+                                     df= data.ids0a)
 shr_i_obesity <- univ_compete( var= "comorbidity_obesity",
                                stat=status_ICH, stype="Hemorrhagic Stroke",
                                df= ecmo_patients)
 shr_i_vasoactive <- univ_compete("ecmo_vasoactive_drugs_before",
                                  stat=status_ICH, stype="Hemorrhagic Stroke",
-                               df= ecmo_patients)
+                                 df= ecmo_patients)
 shr_i_diabetes <- univ_compete( var= "comorbidity_diabetes",
                                 stat=status_ICH, stype="Hemorrhagic Stroke",
                                 df= ecmo_patients)
 shr_i_cardiac <- univ_compete("comorbidity_chronic_cardiac_disease",
                               stat=status_ICH, stype="Hemorrhagic Stroke",
-                            df= ecmo_patients)
+                              df= ecmo_patients)
 shr_i_hypertension <- univ_compete("comorbidity_hypertension",
-                                 stat=status_ICH, stype="Hemorrhagic Stroke",
-                                 df= ecmo_patients)
+                                   stat=status_ICH, stype="Hemorrhagic Stroke",
+                                   df= ecmo_patients)
 # shr_i_neuro <- univ_compete("comorbidity_chronic_neurological_disorder",
 #                             stat=status_ICH, stype="Hemorrhagic Stroke",
 #                             df= data.ids0)
 shr_i_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
-                       var2="log2(ecmo_worst_pa_o2_fi_o2_before)",
-                       stat=status_ICH, stype="Hemorrhagic Stroke",
-                       df= ecmo_patients)
-shr_i_sofa <- univ_compete(var= "sofa",var2="sofa + sofa^2" ,
+                         var2="log2(ecmo_worst_pa_o2_fi_o2_before)",
+                         stat=status_ICH, stype="Hemorrhagic Stroke",
+                         df= ecmo_patients)
+shr_i_sofa <- univ_compete(var= "sofa",#var2="sofa + sofa^2" ,
                            stat=status_ICH, stype="Hemorrhagic Stroke",
                            df= ecmo_patients)
+shr_i_rel_o2_plus50 <- univ_compete(var= "rel_o2_plus50",
+                           stat=status_ICH, stype="Hemorrhagic Stroke",
+                           df= ecmo_patients)
+shr_i_rel_co2_neg50 <- univ_compete(var= "rel_co2_neg50",
+                                    stat=status_ICH, stype="Hemorrhagic Stroke",
+                                    df= ecmo_patients)
 shr_i_region <- univ_compete("income_region",
                              stat=status_ICH, stype="Hemorrhagic Stroke",
-                           df= ecmo_patients)
+                             df= ecmo_patients)
 shr_i_era <- univ_compete("era",stat=status_ICH, stype="Hemorrhagic Stroke",
                           df= ecmo_patients)
 
@@ -836,19 +872,21 @@ shr_i_era <- univ_compete("era",stat=status_ICH, stype="Hemorrhagic Stroke",
 ### forestplot
 
 shr_i_data <- data.frame(rbind(#shr_i_ecmo,
-                               shr_i_age, shr_i_sex,shr_i_vent_ecmo,
-                             shr_i_ethnic,
-                             shr_i_smoke, shr_i_obesity, 
-                             shr_i_diabetes, shr_i_cardiac,
-                             shr_i_hypertension,
-                             # shr_i_neuro,
-                             shr_i_vasoactive,
-                             #shr_i_ac_before,
-                             shr_i_anticoagulants,
-                             shr_i_cannula_lumen, 
-                             shr_i_pf,
-                             shr_i_sofa,
-                             shr_i_region, shr_i_era
+  shr_i_age, shr_i_sex,shr_i_vent_ecmo,
+  shr_i_ethnic,
+  shr_i_smoke, shr_i_obesity, 
+  shr_i_diabetes, shr_i_cardiac,
+  shr_i_hypertension,
+  # shr_i_neuro,
+  shr_i_vasoactive,
+  #shr_i_ac_before,
+  shr_i_anticoagulants,
+  shr_i_cannula_lumen, 
+  shr_i_pf,
+  shr_i_sofa,
+  shr_i_rel_o2_plus50,
+  shr_i_rel_co2_neg50,
+  shr_i_region, shr_i_era
 )) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
   mutate(sHR=paste0(roundz(mean, digits=2), " (",
@@ -861,29 +899,31 @@ rownames(shr_i_data) <- c()
 ##nice labels
 shr_i_data <- shr_i_data %>%
   mutate(Variable=case_when(#Variable == "ecmo" ~"During vs post ECMO",
-                            Variable == "age" ~"Age",
-                            Variable == "sexMale" ~"Male vs Female",
-                            Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
-                            Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
-                            Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
-                            Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
-                            Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
-                            Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
-                              "Co-morbid Cardiac Disease Yes vs No",
-                            Variable == "comorbidity_chronic_neurological_disorderYes" ~
-                              "Co-morbid Chronic Neurological Disorder Yes vs No",
-                            Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
-                            Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
-                            Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
-                            Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
-                            Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
-                            Variable == "sofa" ~"SOFA",
-                            Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
-                            Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
-                            TRUE ~ Variable))
+    Variable == "age" ~"Age",
+    Variable == "sexMale" ~"Male vs Female",
+    Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
+    Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
+    Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
+    Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+    Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
+    Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
+    Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
+      "Co-morbid Cardiac Disease Yes vs No",
+    Variable == "comorbidity_chronic_neurological_disorderYes" ~
+      "Co-morbid Chronic Neurological Disorder Yes vs No",
+    Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
+    Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
+    Variable =="ecmo_vasoactive_drugs_beforeYes" ~
+      "Pre-ECMO vasoactive medicine use Yes vs No",
+    Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
+    Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
+    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+    Variable == "sofa" ~"SOFA",
+    Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
+    Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+    Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
+    Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
+    TRUE ~ Variable))
 
 headerc <- tibble(Variable = c("", "Variable"),
                   N=c("","N"),
@@ -924,10 +964,10 @@ shr_i_data2 <- shr_i_data %>%
   mutate(HR=paste0(" ",sHR))
 
 surv_hr_i_data=bind_rows(shr_i_data2 %>% select(!sHR) %>%
-                         mutate(Model = "Competing Risks"),
+                           mutate(Model = "Competing Risks"),
                          hr_i_data  %>% 
-                         filter(Variable != "Co-morbid Chronic Neurological Disorder Yes vs No") %>%
-                         mutate(Model = "Cox") #%>% select(!HR)
+                           filter(Variable != "Co-morbid Chronic Neurological Disorder Yes vs No") %>%
+                           mutate(Model = "Cox") #%>% select(!HR)
 ) %>%
   filter(!is.na(mean))
 
@@ -953,7 +993,3 @@ all_i_forest <- surv_hr_i_data %>%
              xlab="subHR/HR")
 
 all_i_forest
-
-
-
-

@@ -653,7 +653,9 @@ ecmo_patients <- ecmo_patients %>%
     delta_o2 = ecmo_48_pa_o2 - ecmo_worst_pa_o2_6hr_before ,# ecmo_start_worst_pa_o2,
     delta_co2 = ecmo_48_pa_co2 - ecmo_worst_pa_co2_6hr_before,#ecmo_start_worst_pa_co2,
     delta_o2 = ifelse(delta_o2 > 200 | delta_o2 < -150, NA, delta_o2),
-    delta_co2 = ifelse(delta_co2 > 200 | delta_co2 < -150, NA, delta_o2)
+    delta_co2 = ifelse(delta_co2 > 200 | delta_co2 < -150, NA, delta_co2),
+    rel_delta_o2 = delta_o2/ecmo_worst_pa_o2_6hr_before ,# ecmo_start_worst_pa_o2,
+    rel_delta_co2 = delta_co2/ecmo_worst_pa_co2_6hr_before
     )
 
 
