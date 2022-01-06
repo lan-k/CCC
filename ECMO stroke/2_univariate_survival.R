@@ -494,6 +494,7 @@ hr_forest <- hr_data %>%
              title = "Stroke within 90 days of ECMO",
              graph.pos=3,
              xticks=xticks,
+             boxsize = .25,
              xlog = F, 
              zero=1,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
@@ -608,6 +609,7 @@ shr_forest <- shr_data %>%
   forestplot(labeltext = c(Variable, N, sHR),
              title = "Stroke within 90 days of ECMO (death as competing risk)",
              xticks=xticks,
+             boxsize = .25,
              xlog = F, 
              zero=1,
              graph.pos=3,
@@ -794,6 +796,7 @@ hr_i_forest <- hr_i_data %>%
              title = "Hemorrhagic Stroke within 90 days of ECMO",
              graph.pos=3,
              xticks=xticks,
+             boxsize=0.25,
              xlog = F, 
              zero=1,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
@@ -809,7 +812,7 @@ hr_i_forest
 # ---- subHR_ICH ----
 # shr_i_ecmo <- univ_compete("ecmo", stat=status_ICH, stype="Hemorrhagic Stroke",
 #                            df= data.ids0e)  #small numbers
-shr_i_age <- univ_compete(var="age",stat=status_ICH, var2="age + age^2",
+shr_i_age <- univ_compete(var="age",stat=status_ICH, #var2="age + age^2",
                           stype="Hemorrhagic Stroke",df= ecmo_patients)
 shr_i_sex <- univ_compete("sex",stat=status_ICH, stype="Hemorrhagic Stroke",df= ecmo_patients)
 shr_i_ethnic <- univ_compete("ethnic_white",stat=status_ICH, stype="Hemorrhagic Stroke",
@@ -817,7 +820,7 @@ shr_i_ethnic <- univ_compete("ethnic_white",stat=status_ICH, stype="Hemorrhagic 
 shr_i_smoke <- univ_compete("current_smoker",stat=status_ICH, stype="Hemorrhagic Stroke",
                             df= ecmo_patients)
 shr_i_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
-                                var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                                # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
                                 stat=status_ICH, stype="Hemorrhagic Stroke",
                                 df= ecmo_patients)
 shr_i_cannula_lumen <- univ_compete("cannula_lumen",
@@ -940,6 +943,7 @@ shr_i_forest <- shr_i_data %>%
              xlog = F, 
              zero=1,
              graph.pos=3,
+             boxsize=0.25,
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
                               ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
