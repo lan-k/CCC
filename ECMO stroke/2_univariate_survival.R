@@ -402,7 +402,7 @@ hr_age <- univ(var="age",#var2="age + age^2",
                df= ecmo_patients)
 hr_sex <- univ("sex",df= ecmo_patients)
 hr_vent_ecmo <- univ(var="days_vent_ecmo5",
-                     # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
+                      # var2="days_vent_ecmo5 + I(days_vent_ecmo5^2)",
                      df= ecmo_patients)
 hr_ethnic <- univ("ethnic_white",df= ecmo_patients)
 hr_smoke <- univ("current_smoker",df= ecmo_patients)
@@ -418,7 +418,7 @@ hr_cardiac <- univ("comorbidity_chronic_cardiac_disease",df= ecmo_patients)
 hr_hypertension <- univ("comorbidity_hypertension",df= ecmo_patients)
 hr_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
               var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
-hr_sofa <- univ(var="sofa",#var2="sofa + sofa^2",
+hr_sofa <- univ(var="sofa",#var2="sofa + I(sofa^2)",
                 df= ecmo_patients)
 hr_rel_o2_plus50 <- univ(var="rel_o2_plus50",df= ecmo_patients)
 hr_rel_co2_neg50 <- univ(var="rel_co2_neg50",df= ecmo_patients)
@@ -473,7 +473,7 @@ hr_data <- hr_data %>%
                               "Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
                             Variable == "sofa" ~"SOFA",
                             Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
                             Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
@@ -589,7 +589,7 @@ shr_data <- shr_data %>%
                               "Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
                             Variable == "sofa" ~"SOFA",
                             Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
                             Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
@@ -647,7 +647,7 @@ all_forest <- surv_hr_data %>%
   group_by(Model) %>%
   forestplot(labeltext = c(Variable, N, HR), #
              graph.pos=3,
-             title = "Stroke within 90 days of ECMO (univariate models)",
+             title = "Stroke within 90 days of ECMO (univariable models)",
              fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
              xticks=xticks,
              xlog = F, 
@@ -775,7 +775,7 @@ hr_i_data <- hr_i_data %>%
       "Pre-ECMO vasoactive medicine use Yes vs No",
     Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
     Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
     Variable == "sofa" ~"SOFA",
     Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
     Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
@@ -920,7 +920,7 @@ shr_i_data <- shr_i_data %>%
       "Pre-ECMO vasoactive medicine use Yes vs No",
     Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
     Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"P/F ratio (log2 transformed)",
+    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
     Variable == "sofa" ~"SOFA",
     Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
     Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
@@ -981,7 +981,7 @@ all_i_forest <- surv_hr_i_data %>%
   group_by(Model) %>%
   forestplot(labeltext = c(Variable, N, HR), #
              graph.pos=3,
-             title = "Hemorrhagic Stroke within 90 days of ECMO (univariate models)",
+             title = "Hemorrhagic Stroke within 90 days of ECMO (univariable models)",
              fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
              xticks=xticks,
              xlog = F, 

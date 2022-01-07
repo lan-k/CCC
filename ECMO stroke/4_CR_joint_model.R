@@ -481,7 +481,7 @@ data.CR <- crLong(data.CR,
 # )
 
 sform.CR = as.formula(
-  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo + age^2 + days_vent_ecmo5^2 + "
+  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo +  " #age^2 + days_vent_ecmo5^2 +
          , paste0(testvars, collapse="+"),")*strata(CR)"))  #surv_vars2
 
 survFit.CR <- coxph(sform.CR ,id=pin, data = data.CR)
@@ -502,8 +502,9 @@ jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFi
                    time_var = "day",
                    functional_forms = CR_forms
                    # ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L
-                   # ,n_iter = 50000L, n_burnin = 10000L, n_thin = 10L, n_chains=4
-                   ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4
+                    # ,n_iter = 50000L, n_burnin = 10000L, n_thin = 10L, n_chains=4
+                   # ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4
+                   ,n_iter = 100000L, n_burnin = 20000L, n_thin = 20L, n_chains=4
                    ) #,n_iter = 10000L, n_burnin = 1000L)
 
 summary(jointFit1.CR)
@@ -517,7 +518,31 @@ ggdensityplot(jointFit1.CR, "all",grid = TRUE, size=0.5)
 
 # save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars and 25k iterations
 # save(jointFit1.CR, file="Data/JM_CR_red_50kit.Rdata")
-save(jointFit1.CR, file="Data/JM_CR_red_75kit.Rdata")
+# save(jointFit1.CR, file="Data/JM_CR_red_75kit.Rdata")
+save(jointFit1.CR, file="Data/JM_CR_red_100kit.Rdata")
+
+##try different functional form of days_vent_ecmo
+sform2.CR = as.formula(
+  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo + I(days_vent_ecmo5^2) + "
+         , paste0(testvars, collapse="+"),")*strata(CR)"))  #surv_vars2
+
+survFit2.CR <- coxph(sform2.CR ,id=pin, data = data.CR)
+summary(survFit2.CR)
+
+
+library(lmtest)
+lrtest(survFit2.CR,survFit.CR)  #marginal difference
+
+jointFit2.CR <- jm(survFit2.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFit.p5
+                   time_var = "day",
+                   functional_forms = CR_forms
+                   ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4
+) #,n_iter = 10000L, n_burnin = 1000L)
+summary(jointFit2.CR)
+(stab2.CR <- summary(jointFit2.CR)$Survival)
+(jtab2.CR <- round(exp(stab2.CR[c(1,3,4)]),digits=3))
+
+
 
 
 ##shrink CR coefficients
