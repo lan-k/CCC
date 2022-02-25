@@ -4,6 +4,7 @@
 rm(list=ls())
 source('3_multivariate_survival.R') # prepares the data and runs exclusions
 library(JMbayes2)
+library(dplyr)
 
 biomarkers <- c(
                 # "ecmo_high_d_dimer","ecmo_high_il_6",
@@ -463,6 +464,32 @@ save(jointFit1.p2, jointFitr2, file="Data/JM2.Rdata")
 # ---- jm_model_CR ----
 ####competing risks version
 
+sform.CR = as.formula(
+  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo +  " #age^2 + days_vent_ecmo5^2 +
+         , paste0(testvars, collapse="+"),")*strata(CR)"))  #surv_vars2
+
+
+
+
+##survival only
+data.CR0 <- data.ids0 %>% select(all_of(testvars), tstop, tstart, status2, pin, site_name) %>%
+  na.omit() %>% 
+  rename(status=status2)  #surv_vars2
+
+table(data.CR0$status)
+
+npat0 <- length(data.CR0  %>% pull(pin) %>% unique())
+data.CR0 <- crLong(data.CR0, 
+                  statusVar = "status",
+                  censLevel = "Alive", nameStrata = "CR")
+
+
+survFit.CR0 <- coxph(sform.CR ,id=pin, data = data.CR0)
+summary(survFit.CR0)
+
+
+
+## joint model
 data.CR <- data.ids %>% select(all_of(testvars), tstop, tstart, status2, pin, site_name) %>%
   rename(status=status2)  #surv_vars2
 data.CR <- crLong(data.CR, 
@@ -480,9 +507,7 @@ data.CR <- crLong(data.CR,
 #                     + cluster(pin, site_name)
 # )
 
-sform.CR = as.formula(
-  paste0("Surv(tstart, tstop, status2) ~ cluster(pin, site_name) + (ecmo +  " #age^2 + days_vent_ecmo5^2 +
-         , paste0(testvars, collapse="+"),")*strata(CR)"))  #surv_vars2
+
 
 survFit.CR <- coxph(sform.CR ,id=pin, data = data.CR)
 summary(survFit.CR)
@@ -503,8 +528,8 @@ jointFit1.CR <- jm(survFit.CR, list(lmeFit.p2,lmeFit.p3, lmeFit.p4),   #,  lmeFi
                    functional_forms = CR_forms
                    # ,n_iter = 25000L, n_burnin = 5000L, n_thin = 5L
                     # ,n_iter = 50000L, n_burnin = 10000L, n_thin = 10L, n_chains=4
-                   # ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4
-                   ,n_iter = 100000L, n_burnin = 20000L, n_thin = 20L, n_chains=4
+                   ,n_iter = 75000L, n_burnin = 15000L, n_thin = 15L, n_chains=4, seed=2022
+                   #,n_iter = 100000L, n_burnin = 20000L, n_thin = 20L, n_chains=4
                    ) #,n_iter = 10000L, n_burnin = 1000L)
 
 summary(jointFit1.CR)
@@ -519,7 +544,33 @@ ggdensityplot(jointFit1.CR, "all",grid = TRUE, size=0.5)
 # save(jointFit1.CR, file="Data/JM_CR_red.Rdata") #uses testvars and 25k iterations
 # save(jointFit1.CR, file="Data/JM_CR_red_50kit.Rdata")
 # save(jointFit1.CR, file="Data/JM_CR_red_75kit.Rdata")
-save(jointFit1.CR, file="Data/JM_CR_red_100kit.Rdata")
+# save(jointFit1.CR, file="Data/JM_CR_red_100kit.Rdata")
+
+
+##different functional forms
+
+CR_forms2 <- list(
+  "log2(pa_o2)" = ~ (area(log2(pa_o2)) ):CR  #+slope(log(pa_o2), eps=1, direction = "back")
+  ,"log2(pa_co2)" = ~ (area(log2(pa_co2))):CR #+slope(log(pa_co2), eps=1, direction = "back")
+  ,"log2(platelet_count)" = ~ value(log2(platelet_count)):CR
+  # ,"haemoglobin" = ~ value(haemoglobin):CR
+) #area for gases and vlaue for platelets has the best fit
+
+
+
+jointFit1.CR2 <- update(jointFit1.CR, functional_forms = CR_forms2
+                        ,n_iter = 100000L, n_burnin = 20000L, n_thin = 20L, n_chains=4)
+
+summary(jointFit1.CR2)
+(stab.CR2 <- summary(jointFit1.CR2)$Survival)
+(jtab.CR2 <- round(exp(stab.CR2[c(1,3,4)]),digits=3))
+# save(jointFit1.CR2, file="Data/JM_CR_red_slope_75kit.Rdata")
+# save(jointFit1.CR2, file="Data/JM_CR_red_pc_area_75kit.Rdata")
+# save(jointFit1.CR2, file="Data/JM_CR_red_area_75kit.Rdata")
+# save(jointFit1.CR2, file="Data/JM_CR_red_gas_area_75kit.Rdata")  # did not converge
+
+save(npat0, survFit.CR0, survFit.CR, jointFit1.CR2, 
+     file="Data/JM_CR_red_gas_area_100kit.Rdata") #This has the best fit of unpenalisd models
 
 ##try different functional form of days_vent_ecmo
 sform2.CR = as.formula(
@@ -546,15 +597,35 @@ summary(jointFit2.CR)
 
 
 ##shrink CR coefficients
-# jointFit.CR2 <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) #horseshoe
-# 
-# 
-# coefs.CR <- cbind("un-penalized" = unlist(coef(jointFit1.CR)), 
-#                "penalized" = unlist(coef(jointFit.CR2)))
-# 
-# exp(coefs.CR[,c(1,2)]) #almost no difference
-# exp(unlist(confint(jointFit1.CR)))
+## value models
+# load( file="Data/JM_CR_red_75kit.Rdata")
+load(file="Data/JM_CR_red_100kit.Rdata")
+jointFit1.CRh <- update(jointFit1.CR, priors = list("penalty_alphas" = "horseshoe")) 
+jointFit1.CRr <- update(jointFit1.CR, priors = list("penalty_alphas" = "ridge")) 
 
+save(jointFit1.CRr, jointFit1.CRh, 
+     file="Data/JM_CR_red_100kit_pen.Rdata")
+
+## gas area models
+load( file="Data/JM_CR_red_gas_area_100kit.Rdata")
+jointFit.CRr <- update(jointFit1.CR2, priors = list("penalty_alphas" = "ridge")) #horseshoe
+
+
+coefs.CRr <- cbind("un-penalized" = unlist(coef(jointFit1.CR2)),
+               "penalized" = unlist(coef(jointFit.CRr)))
+
+exp(coefs.CRr[,c(1,2)]) #almost no difference
+# exp(unlist(confint(jointFit.CRr)))
+
+jointFit.CRh <- update(jointFit1.CR2, priors = list("penalty_alphas" = "horseshoe")) #best fit
+
+##horseshoe gase area model fit stats
+# marginal DIC        WAIC             LPML
+# 99553.95            518812361        -11551213
+
+# save(jointFit1.CR,jointFit.CR2, jointFit.CRh, file="Data/JM_CR_red_75kit.Rdata")
+save(jointFit.CRr, jointFit.CRh, 
+     file="Data/JM_CR_red_gas_area_100kit_pen.Rdata")
 
 # ---- jm_model_CR_no_ecmo ----
 
