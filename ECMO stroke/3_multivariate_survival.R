@@ -13,6 +13,7 @@ library(survminer)
 library(cmprsk)
 library(goftest)
 library(visdat)
+library(lmtest)
 options(scipen=999) # avoid scientific presentation
 
 
@@ -35,6 +36,7 @@ covars <- c("age", "sex", "comorbidity_obesity","comorbidity_hypertension",
 #start on the first day of ecmo up to 90 days days_fup
 
 surv_vars <- c("ecmo","age", "sex", 
+               "days_vent_ecmo5",
                # "pin", "site_name",
                "ethnic_white",
                "current_smoker",
@@ -46,7 +48,7 @@ surv_vars <- c("ecmo","age", "sex",
                "ecmo_vasoactive_drugs_before",
                "eotd_anticoagulants",
                "cannula_lumen",
-               "days_vent_ecmo5",
+               
                "income_region", "era")
 
 
@@ -96,7 +98,7 @@ data.ids0 <- ecmo_daily %>% # jmdat0  %>% mutate(age_day = age + day) %>%
 # ---- multi_surv ----
 
 sform = as.formula(
-  paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo + age^2 + sex + days_vent_ecmo5^2 + "
+  paste0("Surv(tstart, tstop, any_stroke) ~ cluster(pin, site_name) + ecmo +  " #days_vent_ecmo5^2 +
          , paste0(surv_vars, collapse="+")))
 
 survFit.p0 <- coxph(sform ,
@@ -150,8 +152,9 @@ crdata <- finegray(Surv(etime1, etime2, event) ~ ., data=crdata,id=pin,
 #creates the Fine-Gray weights for stroke as the event
 
 sform2 = as.formula(
-  paste0("Surv(fgstart, fgstop, fgstatus) ~ cluster(pin, site_name) + ecmo + age^2 + sex + days_vent_ecmo5^2 + "
+  paste0("Surv(fgstart, fgstop, fgstatus) ~ cluster(pin, site_name) + ecmo + "
          , paste0(surv_vars, collapse="+")))
+
 
 fitFG <- coxph( sform2, id=pin,weight=fgwt,
               data=crdata)
@@ -200,7 +203,7 @@ xtlab <- rep(TRUE, length.out = length(xticks))
 attr(xticks, "labels") <- xtlab
 
 headerc <- tibble(Variable = c( "Variable","Variable"),
-                  HR = c("subHR/HR (95% CI)","subHR/HR (95% CI)"),
+                  HR = c("Stroke subHR/HR (95% CI)","Stroke subHR/HR (95% CI)"),
                   Model = c("Competing Risks","Cox"))
 
 
@@ -215,11 +218,14 @@ multi_hr_data=bind_rows(fg_data %>% select(!sHR) %>% mutate(Model = "Competing R
 
 multi_hr_data=bind_rows(headerc,multi_hr_data)
 
+title = paste0("Stroke within 90 days of ECMO (multivariable survival models) \nN=",
+               as.character(length(npat)))
+
 multi_forest <- multi_hr_data %>% 
   group_by(Model) %>%
   forestplot(labeltext = c(Variable, HR), #
              graph.pos=2,
-             title = "Stroke within 90 days of ECMO (multivariate models)",
+             title = title,
              fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
              xticks=xticks,
              xlog = F, 

@@ -340,13 +340,28 @@ ci <- ggcompetingrisks(fitci, palette = "Dark2",
                        conf.int = T)
 
 
-# ---- ci_curve1 ----
+# ---- ci_curve0 ----
 ##mstate version
 
-fit1 <- survfit(Surv(days_fup, status, type="mstate") ~ 1, data=ecmo_patients)
+fit0 <- survfit(Surv(days_fup, status, type="mstate") ~ 1, data=ecmo_patients)
 # ggcompetingrisks(fit1,
 #                  ggtheme = theme_cowplot())  + 
 #   scale_fill_jco(labels=c("Alive", "Death","Discharged","Stroke"))
+
+# ---- ci_curve1 ----
+fit1 <- survfit(Surv(days_fup, status, type="mstate") ~ group, 
+                data=ecmo_patients)
+
+g1 <- ggcompetingrisks(fit1,
+                       ggtheme = theme_cowplot(),
+                       group=group,
+                       xlab = "Days since ECMO initiation",
+                       title="Cumulative Incidence")  + 
+  scale_fill_jco(labels=c("Alive", "Death","Discharged","Stroke"))
+
+
+g1
+
 
 # ---- ci_curve2 ----
 fit2 <- survfit(Surv(days_fup, status2, type="mstate") ~ group, 
@@ -491,7 +506,7 @@ hr_data <- bind_rows(header,hr_data)
 
 hr_forest <- hr_data %>% 
   forestplot(labeltext = c(Variable, N, HR), 
-             title = "Stroke within 90 days of ECMO",
+             title = "Stroke within 90 days of ECMO (Univariable survival models)",
              graph.pos=3,
              xticks=xticks,
              boxsize = .25,
@@ -505,7 +520,7 @@ hr_forest <- hr_data %>%
              vertices = TRUE,
              xlab="Hazard Ratio")
 
-hr_forest
+# hr_forest
 
 
 # ---- subHR ----
@@ -607,7 +622,7 @@ shr_data <- bind_rows(headerc,shr_data)
 
 shr_forest <- shr_data %>% 
   forestplot(labeltext = c(Variable, N, sHR),
-             title = "Stroke within 90 days of ECMO (death as competing risk)",
+             title = "Stroke within 90 days of ECMO (Univariable survival models)  \nDeath as competing risk",
              xticks=xticks,
              boxsize = .25,
              xlog = F, 
@@ -621,14 +636,14 @@ shr_forest <- shr_data %>%
              vertices = TRUE,
              xlab="Subdistribution Hazard Ratio")
 
-shr_forest
+# shr_forest
 
 # ---- cox_CR ----
 ##combine the cox and Cr forestplots
 
 headerc <- tibble(Variable = c( "Variable","Variable"),
                   N=c("N","N"),
-                  HR = c("subHR/HR (95% CI)","subHR/HR (95% CI)"),
+                  HR = c("Stroke subHR/HR (95% CI)","Stroke subHR/HR (95% CI)"),
                   Model = c("Competing Risks","Cox"))
 
 
@@ -647,7 +662,7 @@ all_forest <- surv_hr_data %>%
   group_by(Model) %>%
   forestplot(labeltext = c(Variable, N, HR), #
              graph.pos=3,
-             title = "Stroke within 90 days of ECMO (univariable models)",
+             title = "Stroke within 90 days of ECMO (univariable survival models)",
              fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
              xticks=xticks,
              xlog = F, 
