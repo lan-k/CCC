@@ -46,6 +46,7 @@ WB <- read.csv("data/World_Bank_Income_List.csv", stringsAsFactors = F) %>%
 spain_pins <- read.csv("data/Spain_pin.csv", stringsAsFactors = F)
 
 load(file='data/COVID_Data_stroke.RData') # from 0_read_data.R  
+start_date = as.Date(data_date) - 90 #as.Date("2021-08-11")
 # if(source == 'dummy_data'){
 #   load(file='data/COVID_Data_stroke_dummy.RData') # from 0_read_data.R, dummy data
 #   # fixes with stroke
@@ -256,7 +257,10 @@ daily = select(daily, pin, date_daily, ecmo, platelet_count, "p_h", "aptt", "inr
                inotropic_support, eotd_vasoactive_drugs
 ) %>%
   mutate(date_daily = ifelse(date_daily >= last_possible, NA, date_daily), # impossible date set to missing
-         date_daily = as.Date(date_daily, origin='1970-01-01')) 
+         date_daily = as.Date(date_daily, origin='1970-01-01'),
+         il_6 = ifelse(il_6 > 10000, NA_real_, il_6),
+         d_dimer=ifelse(d_dimer>70000, NA_real_, d_dimer),
+         aptt=ifelse(aptt>200, NA_real_, aptt)) #remove implausible values
 
 
 
@@ -371,6 +375,9 @@ daily = filter(daily, !pin %in% ex)
 # plotmat(M, name=labels, pos=pos, box.type = 'rect', box.size=sizes, box.prop = props, curve = 0, arr.pos=0.85)
 # shape::Arrows(x0=0.15, x1=0.3, y0=0.5, y1=0.5, arr.width=0.2, arr.length=0.22, arr.type='triangle')
 # dev.off()
+
+
+
 
 
 ###fix values for blood gases
@@ -739,6 +746,78 @@ remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
        spain_pins, timechecks, timevars, WB, worst_PF_day_before)
 
 
+
+### flow chart (Feb 2022)
+# jpeg('figures/flow.jpg', width=5.5, height=3.7, units='in', res=300, quality=100)
+# 
+# 
+# f = patients %>%
+#   filter(date_ecmo < start_date | is.na(date_ecmo)) %>%
+#   select(pin, age, date_icu, complication_stroke, complication_stroke_date, last_date, 
+#          date_death, date_discharge, date_ecmo, date_hospital_discharge, 
+#          date_ecmo_discontinued, any_ecmo,ecmo_type) 
+# n_start = nrow(f) # starting number
+# 
+# ## did not start ECMO
+# f2 = f %>% filter(any_ecmo == "Yes")
+# nf2=nrow(f2)
+# 
+# # V-A ECMO
+# f3 <- f2 %>%
+#   filter(ecmo_type == "Venous-Venous" )
+# 
+# # stroke before  ECMO start
+# so = filter(f3, complication_stroke == "Yes")
+# 
+# n_update = nrow(so)
+# so2 = filter(so, 
+#              complication_stroke_date >= date_ecmo )
+# 
+# 
+# final <- ecmo_patients %>% filter(
+#   !is.na(date_ecmo),
+#   !is.na(days_fup),
+#   date_ecmo < start_date,
+#   ecmo_type == "Venous-Venous",
+#   is.na(stroke_before_ecmo) | stroke_before_ecmo != "Yes")
+# 
+# n_final = nrow(final)
+# 
+# #exclusions
+# n_no_ecmo = n_start-nf2
+# n_VA =  nf2 - nrow(f3)
+# n_missing_stroke_date = sum(is.na(so$complication_stroke_date)) 
+# n_stroke_prior_ecmo = n_update - nrow(so2) # number excluded
+# n_missing_date= nrow(ecmo_patients %>% filter(
+#   !is.na(date_ecmo),
+#   date_ecmo < start_date,
+#   ecmo_type == "Venous-Venous",
+#   is.na(stroke_before_ecmo) | stroke_before_ecmo != "Yes")) - n_final
+# 
+# ##plot the flow chart
+# par(mai=c(0,0,0,0))
+# labels = c(paste('All patients\n n = ', format(n_start, big.mark = ','), sep=''),
+#            paste(
+#              # 'Excluded\n- Age under 18, n = ', n_exclude_age,
+#              'Excluded\n- No ECMO support, n = ',format(n_no_ecmo, big.mark = ',') ,
+#              '\n- Veno-arterial ECMO, n = ', n_VA,
+#              '\n- Missing discharge or ECMO start date, n = ', n_missing_date,
+#              '\n- Stroke with date prior ECMO support, n = ', n_stroke_prior_ecmo,
+#              sep=''),
+#            paste('Analysed\n n =', format(n_final, big.mark = ',')))
+# n_labels = length(labels)
+# M = matrix(nrow=n_labels, ncol=n_labels)
+# M[3,1] = "' '"
+# pos = matrix(data=c(0.15,0.8,
+#                     0.65,0.5,
+#                     0.15,0.2), ncol=2, byrow=TRUE)
+# sizes=c(1.3,3.3,1.3) / 10
+# props = c(0.36,0.32,0.32) # narrower for first and last
+# 
+# plotmat(M, name=labels, pos=pos, box.type = 'rect', box.size=sizes, box.prop = props, curve = 0, arr.pos=0.85)
+# shape::Arrows(x0=0.15, x1=0.3, y0=0.5, y1=0.5, arr.width=0.2, arr.length=0.22, arr.type='triangle')
+# dev.off()
+# 
 
 
 

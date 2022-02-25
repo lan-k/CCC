@@ -25,6 +25,8 @@ knitr::read_chunk("2_univariate_survival.R")
 ```
 
 
+
+
 ```{r, include = F}
 par(mar=c(5,5,5,0)) 
 # par(mar=c(3,3,3,0))  #try to change the plotting margins
@@ -37,26 +39,75 @@ par(mar=c(5,5,5,0))
 
 # Risk factors for stroke in COVID-19 patients on Veno-Venous ECMO
 
-This document summarises the analysis of risk factors for stroke in COVID-19 patients treated with veno-venous ECMO. Patients entered the study on the first day of ECMO initiation and those who had a stroke previously were excluded. 
+This document summarises the analysis of risk factors for stroke in COVID-19 patients treated with veno-venous ECMO. 
 
-There were `r length(unique(ecmo_patients$pin))` patients in the cohort.
+# Methods
+## Study Population
+
+The study population was adults (aged 18 or over) with severe COVID-19 who required veno-venous ECMO support. Patients entered the study on the first day of ECMO initiation and those who had a stroke prior to ECMO support were excluded. Patients were followed for a maximum of 90 days after ECMO initiation until stroke or death, whichever came first. Patients who did not die or experience a stroke within 90 days were censored at hospital discharge or 90 days.
+
+Patients from the Spanish database were excluded since date of stroke was not recorded in this dataset.
+
+There were `r length(unique(ecmo_patients$pin))` patients in the cohort. Data was extracted on `r data_date` and includes patients who initiated ECMO up to `r start_date`. 
+
 
 \newpage
+## Flow Chart
+
+![Flow Chart](Figures/flow.jpg)
+
+
+
+## Statistical analysis
+
+### Descriptive statistics
+
+Descriptive statistics were produced for baseline characteristics of patients, as well as characteristics of ECMO support and complications. Continuous variables were summarised using means and standard deviation or medians and interquartile range, as appropriate, and categorical variables using counts and percentage.
+
+
+### Regression models
+
+The association between risk factors of interest and any type of stroke was analysed through survival analysis, as well as joint modelling of survival outcomes and longitudinal biomarkers. 
+
+Survival models for time to any type of stroke included cause specific Cox proportional hazards models censoring at death, as well as Fine-Gray models, with death treated as a competing risk. 
+
+Risk factors of interest included in the models as fixed in time covariates were age, sex, number of days ventilated pre-ECMO, ethnicity, smoking status, co-morbidities at baseline including obesity, diabetes, hypertension and chronic cardiac disease, pre-ECMO use of vasoactive medicines, cannula type, P/F ratio (log2-transformed) and SOFA at ECMO initiation, relative change in PaO2 and PaCO2 at ECMO initiation,  economic region (High vs Middle) and pandemic era. Time-varying covariates were ECMO support (during vs after) and anticoagulant use during follow-up.
+
+Although co-morbid neurological conditions and use of anticoagulants before ECMO were of interest, they were not included, because models did not converge due to small numbers (there was only one stroke patient who had either of these risk factors).
+
+Initially, univariable models were fitted to risk factors separately. Next, multivariable models were fitted, including all the risk factors that had < 50% missing data in the same model.
+
+Finally, joint models using a Bayesian approach were investigated, which comprised both a competing risk survival model and longitudinal models for biomarkers collected during and after ECMO support. The survival model component of the joint model created separate strata for the competing risk outcomes of stroke and death, which was different to the Fine-Gray model used previously.  Due to the complexity of the joint model and difficulty with model convergence, covariates in the survival model were further reduced, excluding those which were of lesser interest, had small numbers, or caused variance inflation/lack of convergence in the models. 
+
+Robust standard errors were used to account for clustering by site in all survival models.
+
+Longitudinal models included PaO2, PaCO2 and platelet count as biomarkers, which were log2-transformed due to skewness. A random slope for time and an interaction term between ECMO exposure and time were included. Different functional forms for the biomarkers over time were investigated, including current value, slope and average cumulative values.  The best joint model was chosen according to the lowest values of the Deviance Information Criterion (DIC) and Watanabe–Akaike Information Criterion (WAIC) and the highest value of the logarithm of the Pseudo-marginal likelihood (LPML).
+
+As a sensitivity analysis due to the number of covariates and longitudinal biomarkers, the best fitting joint model was penalised using ridge or horseshoe shrinkage priors. Using penalised regression allows the risk factors which are more strongly associated with stroke or death to be identified. DIC, WAIC and LPML were used to select the best of the penalised and unpenalised models.
+
+All models were used to estimate hazard ratios (HRs), or subdistribution HRs (subHRs) for Fine-Gray models, and 95% confidence intervals, or 95% credible intervals for joint models. R version 4.1.0 (R Foundation for Statistical Computing, Vienna, Austria) was used for all statistical analyses. The R package 'survival' was used for survival analysis and 'JMBayes2' for joint modelling.
+
+
+\newpage
+# Results
 ## Baseline characteristics
 
 ```{r,  results='asis'}
 library(arsenal)
 library(labelled)
+library(dplyr)
 mycontrols  <- tableby.control(test=FALSE, total=T,
-                               na.action=na.tableby(T),
-                               numeric.stats=c("Nmiss", "median", "q1q3"), #,"min","max"
-                               cat.stats=c("Nmiss","countpct"),
-                               stats.labels=list(Nmiss="Missing",q1q3='IQR'),
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
                                digits=1, digits.p=2, digits.pct=1)
 
 ecmo_patients <- ecmo_patients %>%
-  mutate(stat = ifelse(as.character(status2) == "Censor",
-                          "Alive",as.character(status2)))
+  mutate(fup_outcome = ifelse(as.character(status2) == "Censor",
+                          "Alive",as.character(status2)),
+         stat = ifelse(any_stroke == 1,
+                          "Stroke","No Stroke"))
 
 vars <- c('age','sex','ethnicity'
           ,'country',"income_group",
@@ -74,7 +125,7 @@ tabdata = ecmo_patients %>%
   # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
   #                                     as.character(complication_stroke))) %>%
   filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
-  select(all_of(vars)) %>%  #stroke_group4
+  select(all_of(vars),stat) %>%  #stroke_group4
   set_variable_labels(age =  "Age",
                      sex="Sex",
                      ethnicity="Ethnicity",
@@ -94,13 +145,14 @@ tabdata = ecmo_patients %>%
                      comorbidity_malignant_neoplasm="Comorbid malignant neoplasm",
                      comorbidity_severe_liver_disease='Comorbid severe liver disease',
                      era="Pandemic Era",
-                     income_region = "Economic region"
+                     income_region = "Economic region",
+                     stat = "Stroke Yes or No"
                       )
 
 
 
 
-formula <- as.formula(paste0("~", paste0(vars, collapse="+")))
+formula <- as.formula(paste0("stat ~", paste0(vars, collapse="+")))
 
 tab1 <- tableby(formula, data=tabdata, control=mycontrols)
 summary(tab1, title='Patient Characteristics') 
@@ -148,7 +200,8 @@ tabdata <- ecmo_patients %>%
                       rr_vent="Respiratory rate at time of ventilation (breaths/min)",
                       ecmo_vasoactive_drugs_before = "Pre-ECMO vasoactive medicine use",
                       ac_before = "Pre-ECMO anticoagulant use",
-                      stat = "Stroke or Death")
+                      stat = "Stroke Yes or No"
+                      )
 
 
 formula <- as.formula(paste0("stat ~", paste0(preecmo_vars, collapse="+")))
@@ -161,6 +214,8 @@ summary(tab2, title='Pre-ECMO characteristics')
 
 \newpage
 ## Characteristics of ECMO run
+
+**NOTE: The "outcome" characteristic in this table is at hospital discharge. This may have occurred more than 90 days after ECMO initiation and is therefore after the follow-up period of the study. So it may cause confusion if included in the manuscript**
 
 ```{r, results='asis'}
 
@@ -188,8 +243,8 @@ tabdata <- ecmo_patients %>%
                       days_vent_ecmo = "Days from mechanical ventilation to ECMO",
                       days_sympt_hosp="Days from first symptoms to hospitalisation",
                       day='Day put on ECMO',
-                      outcome='Outcome',
-                      stat = "Stroke or Death")
+                      outcome='Final outcome at hospital discharge (may be after the end of 90 day follow-up)',
+                      stat = "Stroke Yes or No")
 
 
 formula <- as.formula(paste0("stat ~", paste0(ecmo_vars, collapse="+")))
@@ -230,19 +285,82 @@ tabdata <- ecmo_patients %>%
                       ecmo_IJ_cannula_size_DL = "DL IJ Cannula Size",
                       ecmo_IJ_cannula_size_SL = "SL IJ Cannula Size",
                       ecmo_circuit_change = "Circuit change",
-                      stat = "Stroke or Death")
+                      stat = "Stroke Yes or No")
 
 formula <- as.formula(paste0("stat ~", paste0(cannula_vars, collapse="+")))
 
+tab4 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab4, title="Characteristics of ECMO support")
+```
+
+\newpage
+### Lab values during ECMO support   
+
+This table describes the lab values during ECMO support. For each lab value, data were summarized into a single measure per patient by log-transforming the lab-values, calculating the mean value for each patient and exponentiating. The summary values in the table are the median values from the patient summaries.
+
+Values of interleukin-6 above 10,000 were excluded since this was considered an upper limit. 
+
+**Patients who have missing data for all the lab values have been excluded from the table.**
+
+```{r, results='asis'}
+
+expmean <- function(x) {
+  if (is.na(x)) {
+    m <- NA_real_
+  } else {
+    m <- exp(mean(log(x), na.rm=T))
+  }
+  
+  return(m)
+}
+
+lab_vars <-c("pa_o2","pa_co2", "pa_o2_fi_o2",
+               "eotd_peep", "p_h",  "platelet_count",
+               "d_dimer","il_6",
+                "aptt" ,
+                "haemoglobin")
+
+mycontrols  <- tableby.control(test=FALSE, total=T,
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
+
+
+tabdata <- left_join(ecmo_patients %>% select(pin), ecmo_daily, by="pin") %>%
+  mutate(stat = ifelse(any_stroke == 1,
+                          "Stroke","No Stroke")) %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  select(all_of(lab_vars),pin, stat) %>%
+  group_by(pin, stat) %>%
+  summarise(across(all_of(lab_vars), expmean ), .groups="keep") %>% #~median(.x,na.rm=T)
+  ungroup() %>%
+  set_variable_labels( 
+                      pa_o2 = "PaO2 (mmHG)",
+                      pa_co2 = "PaCO2 (mmHg)",
+                      pa_o2_fi_o2 = "P/F ratio (mmHg)",
+                      eotd_peep = "PEEP",
+                      p_h = "pH",
+                      platelet_count = "Platelet Count (x 10^9/L)",
+                      d_dimer = "D-dimer (mg/L)",
+                      il_6= "Interleukin-6 (ng/L)",
+                      aptt = "aPTT",
+                      haemoglobin = "Haemoglobin (g/dL)",
+                      stat = "Stroke Yes or No")
+
+formula <- as.formula(paste0("stat ~", paste0(lab_vars, collapse="+")))
+
 tab5 <- tableby(formula, data=tabdata, control=mycontrols)
-summary(tab5, title="Characteristics of ECMO support")
+summary(tab5, title="Lab values during ECMO support")
 ```
 
 
 
-
 \newpage
-### Neurological complications during ECMO
+### Neurological complications after ECMO initiation
 
  A patient could have up to two stroke types.
 
@@ -253,7 +371,7 @@ summary(tab5, title="Characteristics of ECMO support")
 
 mycontrols  <- tableby.control(test=FALSE, total=T,
                                na.action=na.tableby(T),
-                               numeric.stats=c( "median", "q1q3"), #,"min","max"
+                               numeric.stats=c("median", "q1q3"), #,"min","max"
                                cat.stats=c("countpct"),
                                stats.labels=list(q1q3='IQR'),
                                digits=1, digits.p=2, digits.pct=1)
@@ -281,21 +399,24 @@ tabdata <- ecmo_patients %>%
    set_variable_labels(ICH = "Haemorrhagic stroke",
                        ischaemic = "Cerebral ischaemia",
                        stroke_undetermined = "Undetermined type"
+                       # status = "Outcome during 90 day follow-up"
                       )
 
 
 
 formula <- as.formula(paste0(" ~", paste0(neuro_vars, collapse="+")))
 
-tab4 <- tableby(formula, data=tabdata, control=mycontrols)
-summary(tab4, title="Neurological complications")
+tab6 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab6, title="Neurological complications")
 
 
 ```
 
 
 \newpage
-### Other complications during ECMO run
+### Other complications
+
+**Since the date of these complications was not checked, the complications may have occurred before, during or after ECMO**.
 
 
 ```{r, results='asis'}
@@ -303,9 +424,9 @@ summary(tab4, title="Neurological complications")
 
 mycontrols  <- tableby.control(test=FALSE, total=T,
                                na.action=na.tableby(T),
-                               numeric.stats=c("Nmiss", "median", "q1q3"), #,"min","max"
-                               cat.stats=c("Nmiss","countpct"),
-                               stats.labels=list(Nmiss="Missing",q1q3='IQR'),
+                               numeric.stats=c("N","Nmiss", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss","countpct"),
+                               stats.labels=list(N="N",Nmiss="Missing",q1q3='IQR'),
                                digits=1, digits.p=2, digits.pct=1)
 
 complic_vars <-c("complication_cardiac_arrest","complication_bacteraemia",
@@ -335,8 +456,8 @@ tabdata <- ecmo_patients %>%
 
 formula <- as.formula(paste0("stat ~", paste0(complic_vars, collapse="+")))
 
-tab5 <- tableby(formula, data=tabdata, control=mycontrols)
-summary(tab5, title="Other complications during ECMO run")
+tab7 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab7, title="Other complications")
 
 
 
@@ -351,93 +472,68 @@ summary(tab5, title="Other complications during ECMO run")
 
 ```
 
-
 \newpage
+### Outcome during 90 days of follow-up
+
+
+```{r, results='asis'}
+
+mycontrols  <- tableby.control(test=FALSE, total=T,
+                               na.action=na.tableby(T),
+                               numeric.stats=c( "median", "q1q3"), #,"min","max"
+                               cat.stats=c("countpct"),
+                               stats.labels=list(q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
+
+tabdata <- ecmo_patients %>%
+    filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+   select(status) %>%
+   set_variable_labels(status = "Outcome during 90 day follow-up")
+                       
+
+tab9 <- tableby( ~ status, data=tabdata, control=mycontrols)
+summary(tab9, title="90 Day Outcome")
+
+
+```
+
+
+
+
 ## Cumulative incidence of ECMO outcomes
 
-The following is a cumulative incidence plot for stroke and death. Most strokes occurred within 30 days of initiating ECMO.
+The following is a cumulative incidence plot for stroke and death. Day 0 is the first day of ECMO support.
 
-```{r ci_curve2,  fig.width=6}
+Most strokes occurred within 30 days of initiating ECMO. 
+
+```{r ci_curve1,  fig.width=6}
 
 
 ```
 
 \newpage
 # Survival Analysis
-Initially, all types of strokes have been combined. If feasible, later analysis may consider haemorrhagic stroke as the outcome and treating cerebral ischaemia as a competing risk.
+## Univariable survival models
 
-Univariate analysis initially fitted models for the risk factors separately. hen multivariate models were fitted, including all the risk factors in the same model.
+Risk factors are analysed separately by entering each one as a single covariate in the survival models. The combined estimates for cause specific Cox model HRs, Fine-Gray competing risk subHRs and N for each model are shown in the forestplot.
 
-Two types of models were used to estimate risk factors for stroke:
+```{r uni_surv_stroke}
 
-- Cause specific for stroke
-- Stroke with death as a competing risk.
+```
 
-The risk factors considered were
+```{r subHR}
 
-- age (including an age-squared term)
-- sex
-- days ventilated pre-ECMO (change from 5 days + squared term)
-- ethnicity (white vs all others)
-- current smoker
-- obesity
-- hypertension
-- diabetes
-- co-morbid cardiac disease
-- pre-ECMO use of vasoactive medicines
-- single vs double cannula
-- P/F ratio (log2-transformed)
-- SOFA at ICU admission (+ squared term)
-- ECMO (during vs after)
-- use of anticoagulants during ECMO (time-varying)
-- economic region (High vs Middle)
-- pandemic era
+```
 
-Squared terms were added to age and days ventilated pre-ECMO to linearise the functional forms, however there was still some residual non-linearity.
-
-Co-morbid neurological conditions and use of anticoagulants before ECMo were not included, because models did not converge due to small numbers (there was only one stroke patient who had either of these risk factors).
-
-\newpage
-## Cause specific models for any stroke 
-
-Here the outcome is time to any type of stroke, censoring at death, discharge or 90 days after the initiation of ECMO, whichever comes first. Cox proportional hazards models were used to estimate hazard ratios (HRs) and 95% confidence intervals.
-
-The univariate HR estimates have been combined into a forestplot.
-
-
-```{r uni_surv_stroke,  fig.width=9, fig.height=7}
-
+```{r cox_CR, fig.width=9, fig.height = 7, dpi=300}
 
 ```
 
 \newpage
-## Competing Risks
+## Multivariable survival models
 
-Here the outcome is time to any type of stroke, treating death as a competing risk. Patients are censored at discharge or 90 days after the initiation of ECMO, which ever comes first. Fine-Gray models were used to estimate subdistribution hazard ratios (subHR) for the instantaneous risk for stroke.
-Fine-Gray model for stroke with death as a competing risk.
+In this analysis, all risk factors with less than 50% missing data were included in a multivariate survival model. Since  SOFA, change in relative blood gases and P/F ratio at ECMO initiation had large amounts of missing data, they were excluded from the multivariate analysis.
 
-The univariate subHR estimates have been combined into a forestplot.
-
-```{r subHR, fig.width=9, fig.height=7}
-
-# out.width = "150%"
-
-
-```
-
-\newpage
-The cause specific and competing risk estimates have been combined into a single forestplot.
-
-```{r cox_CR, fig.width=9, fig.height = 7}
-
-```
-
-\newpage
-## Multivariate survival models
-
-In this analysis, all risk factors with less than 50% missing data were included in a multivariate survival mode. Since SOFA and P/F ratio at ECMO initiation had large amounts of missing data, they were excluded from the multivariate analysis.
-
-Question: Although P/F ratio at ECMO initiation and SOFA were excluded, could use of vasoactive drugs before ECMO be considered a marker of disease severity instead?
 
 
 ```{r}
@@ -459,29 +555,11 @@ There were `r length(npat)` patients analysed who had `r survFit.p0$nevent` stro
 
 \newpage
 
-```{r multi_cox_CR, fig.width=9, fig.height = 7}
+```{r multi_cox_CR, fig.width=9, fig.height = 7, dpi=300}
 ```
 
 \newpage
-# Joint models
-
-Joint models combine survival analysis with longitudinal models for the lab values (biomarkers). A Bayesian approach using the R package 'JMBayes2' was used to fit the joint models. Longitudinal models for the biomarkers were fitted with linear mixed models, allowing different longitudinal trajectories for during or post-ECMO and random intercepts and slopes. Since the analysis is Bayesian, the lower and upper limits represent 95% credible intervals.
-
-For this analysis, the survival model is a Cox proportional hazards model for time to any type of stroke. here, deaths were censored but this may not be an appropriate for joint models.  Therefore, a competing risks joint model was also investigated.  
-
-Biomarkers included were
-
-- PaO2
-- PaCO2
-- platelet count
-
-pH and Hb were not included since they caused non-convergence or very wide credible intervals in the joint models. The biomarkers were log2-transformed due to skewness, so the HRs represent a doubling in the biomarker value.
-
-Due to convergence issues, it was not possible to fit models using all the variables in the multivariate survival model. Variables with small numbers were excluded (cannula type, comorbid cardiac disease).
-Two types of models were fitted, the first with a reduced number of covariates and the second with a more complete set of covariates.
-
-
-**Note: Due to the structure of the joint models, HRs from the cause specific Cox model may be biased and it is preferable to use the competing risks joint model.**
+# Competing Risk Joint Models
 
 
 ```{r}
@@ -492,38 +570,105 @@ knitr::read_chunk("5_JM_forest.R")
 ```
 
 
-\newpage
-## Joint Model 1
-There were `r summary(jfit_red_ridge)$n` patients analysed with `r summary(jfit_red_ridge)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jfit_red_ridge)$events)` strokes.
+## Survival model stratified by the competing risks
+
+In joint modelling version of competing risks, survival models were stratified by the competing risks outcomes i.e. stroke or death. This competing risk survival model created separate strata for the different outcomes of stroke and death.  
+
+The results of the survival model for both stroke and death are shown in the forestplot below. This model includes ALL patients who had data for the survival model covariates, even if they had missing biomarker data. There were `r npat0` patients included in the survival model, with `r survFit.CR0$nevent` events, consisting of 39 strokes and 168 deaths.
 
 
-```{r jm_forest_red_un, fig.width=9, fig.height=7}
+```{r jm_forest_CR_surv0, fig.width=9, fig.height=7, dpi=300}
 
-#out.width = "130%"
-#fig.fullwidth=TRUE
-```
-
-
-\newpage
-## Joint Model 2
-There were `r summary(jointFit1.p1)$n` patients analysed with `r summary(jointFit1.p1)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.p1)$events)` strokes.
-
-```{r jm_forest_un, fig.width=9, fig.height=7}
-#out.width = "130%"
 ```
 
 \newpage
-# Competing Risks Joint Models
-## Stratifying by the competing risks
+This is the same model as above, but **excluding** the patients who had missing longitudinal biomarker data i.e. the same cohort that will be used in the joint model. This model included `r summary(jointFit1.CR2)$n` patients who had `r sum(summary(jointFit1.CR2)$events)` events (35 strokes and 135 deaths).
 
-This competing risk survival model creates separate strata for the different outcomes of stroke and death. It is NOT the Fine-Gray model used in the competing-risks survival model used above. Hazard Ratios are provided for both stroke and death outcomes in the forestplot below.
-
-There were `r summary(jointFit1.CR)$n` patients analysed with `r summary(jointFit1.CR)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.CR)$events)` strokes and deaths.
-
-**Note: It is preferable to use this competing risks joint model rather than the stroke specific joint models 1 & 2 above.**
-
-
-```{r jm_forest_CR, fig.width=9, fig.height=7}
+```{r jm_forest_CR_surv, fig.width=9, fig.height=7, dpi=300}
 
 ```
+
+Wider CIs can be seen in the second forestplot due to the smaller sample size.
+
+
+## Unpenalised Joint model 
+
+The joint model included `r summary(jointFit1.CR2)$n` patients with `r summary(jointFit1.CR2)$descrpt[1,1]` longitudinal observations, who had `r sum(summary(jointFit1.CR2)$events)` events (35 strokes and 135 deaths). There were fewer patients included in the joint model than in the multivariate survival models, due to some patients having no data recorded for the longitudinal biomarkers.
+
+The best fitting joint model used longitudinal models for average cumulative blood gases up to the current time and the current value of the platelet count.  
+
+Hazard Ratios for the unpenalised model are provided for both stroke and death outcomes in the forestplot below.
+
+
+```{r jm_forest_CR_un, fig.width=9, fig.height=7, dpi=300}
+
+```
+
+
+## Penalised Joint model 
+
+Of the unpenalised and penalised models, the best fitting model used horseshoe priors, followed by the unpenalised model, while the ridge priors had the worst fit.
+
+Hazard Ratios for the best fitting mdoel with horseshoe penalised model are provided for both stroke and death outcomes in the forestplot below. The forestplot for penalised HRs with horseshoe priors, showed that the regression coefficients shrunk closer to the null and that all HRs for stroke now included 1.0, including PaCO2 for stroke.
+
+The HRs with ridge penalisation can be found in the Appendix.
+
+
+```{r jm_forest_CR_pen, fig.width=9, fig.height=7, dpi=300}
+
+```
+
+\newpage
+The forestplot below shows the penalized and unpenalized HRs in the same plot. This could be used as an alternative to the two separate plots above.
+
+
+```{r jm_forest_CR_hs, fig.width=9, fig.height=9, dpi=300}
+
+```
+
+
+
+\newpage
+# Discussion
+
+In the univariate survival models, increased SOFA and a relative increase in PaO2 levels of 50% or more at ECMO initiation (compared with < 50%) were associated with an increased risk of stroke. Since these variables had > 50% missing data, they were not included in the multivariate models.
+
+Cause specific and Fine-Gray competing risks survival analysis of risk factors for stroke in V-V ECMO patients showed that obesity and use of vasoactive medicines before ECMO are associated with an increased risk of stroke in both univariable and multivariable survival models. Use of vasoactive medicines may be an indicator of more serious disease pre-ECMO initiation.
+
+In joint modelling, while stroke risk HR point estimates for obesity and vasoactive medicines were similar to the multivariate survival models, there was uncertainty in the risk estimates, with wide 95% CIs containing 1.0. This is most likely due to reduced power from a smaller sample size in the joint models than the survival only models, after excluding patients with missing longitudinal data (see Appendix).
+
+In the unpenalised model, there was an association between average PaCO2 levels after the start of ECMO and the risk of stroke. However, after penalisation with horseshoe priors, which had a better model fit, there was no association with stroke for any of the biomarkers. 
+
+Penalisation was performed as a sensitivity analysis and the horseshoe prior used for shrinkage assumes
+that the data are sparse (ie a large number of observations for relatively few patients) and that most of the associations from the longitudinal biomarkers are null. While first assumption is plausible, since there were `r summary(jointFit1.CR2)$descrpt[1,1]` longitudinal observations from `r summary(jointFit1.CR2)$n` patients, the second assumption is untestable. More studies are needed to confirm whether there is a true association between increased PaCO2 levels during ECMO support and the risk of stroke.
+
+
+In the penalised joint model, there was a higher risk of death during ECMO support compared with after discontinuation (HR (95% CI) = `r jm_hr_data_redu_CR %>% filter(Variable == "During vs post ECMO", Outcome == "Death" ) %>% select(HR)`) and for every additional year of age (HR (95% CI) = `r jm_hr_data_redu_CR %>% filter(Variable == "Age", Outcome == "Death" ) %>% select(HR)`), while there was a reduced risk of death while taking anticoagulants (HR (95% CI) = `r jm_hr_data_redu_CR %>% filter(Variable == "Anticoagulant use during ECMO Yes vs No", Outcome == "Death" ) %>% select(HR)`).
+
+The main limitation of the analysis is the large amount of missing data for some of the covariates, which may have led to biased HR estimates. Using a staged approach from univariable to multivariable survival modelling, through to joint modelling, allows any change in HRs to be identified. However, this was not possible for the biomarkers in the longitudinal models, so there remains the possibility of bias in the jointly modelled HR estimates due to missing data. 
+
+
+
+
+
+
+\newpage
+# Appendix
+
+## Joint model fit and convergence
+The models were fitted with 4 chains, 100000 iterations, 20000 burn-ins per chain and 20 thinnings.
+
+For the best fitting model penalised with horseshoe priors, the largest value of Rhat was `r round(max(jointFit.CRh$statistics$Rhat$alphas[,1], jointFit.CRh$statistics$Rhat$betas1[,1], jointFit.CRh$statistics$Rhat$betas2[,1], jointFit.CRh$statistics$Rhat$betas3[,1]), digits=2)`, which was less than 1.05 and considered acceptable. Mean Rhat was `r round(mean(c(unlist(jointFit.CRh$statistics$Rhat$alphas[,1]), unlist(jointFit.CRh$statistics$Rhat$betas1[,1]), unlist(jointFit.CRh$statistics$Rhat$betas2[,1]), unlist(jointFit.CRh$statistics$Rhat$betas3[,1])), na.rm=T), digits=3)` 
+
+
+
+## Penalised joint models
+
+Using ridge priors to penalise the regression coefficients showed very little change from the unpenalised model. The forestplot for the penalised and unpenalised HRs and 95% CIs for stroke are shown below.
+
+```{r jm_forest_CR_ridge, fig.width=9, fig.height=9, dpi=300}
+
+```
+
+
 

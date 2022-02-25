@@ -1,0 +1,313 @@
+---
+title: "Plots of lab values"
+author: "Lan Kelly"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:   
+  word_document: 
+  #reference_docx: rmarkdown-styles-SAP.docx
+  reference_docx: WordStylesReference01.docx
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
+error=FALSE, comment='', dpi=400)
+options(knitr.kable.NA = '')
+options(width=1000) # Wide pages
+options(scipen=999) # avoid scientific presentation
+# options(fig.width=10)
+# options(out.height=10)
+# opts_knit$set(global.par = TRUE)
+
+
+```
+
+```{r, include = F}
+knitr::read_chunk("2_univariate_survival.R")
+```
+
+```{r get_data}
+
+```
+
+
+\newpage
+
+# Lab values after ECMO initiation
+
+
+
+```{r, include=FALSE}
+# data to plot, must have dates
+
+library(ggplot2)
+library(dplyr)
+fup = 21
+
+ecmo_daily <- ecmo_daily %>% 
+  filter(ecmo_type == "Venous-Venous",
+         !is.na(ecmo), !is.na(eotd_anticoagulants)) %>%
+  mutate(il_6=ifelse(il_6>10000, NA_real_, il_6),
+         d_dimer=ifelse(d_dimer>70000, NA_real_, d_dimer),
+         aptt=ifelse(aptt>200, NA_real_, aptt)
+         )
+
+to_plot = filter(ecmo_daily, 
+                 !is.na(date_ecmo),
+                 !is.na(date_daily),
+                 !is.na(complication_stroke)) %>%
+  mutate(day = as.numeric(date_daily - date_ecmo)) %>%
+  filter(day <= fup & day >= 0) # exclude long stays for the plot
+
+
+to_plot = mutate(to_plot, facet = paste("Stroke = ", complication_stroke, sep='')) # nice facet
+
+z = qnorm(0.975)
+
+
+boxplot_over_time <- function(var, ylabel) {
+  
+  p <- to_plot %>%
+    ggplot(aes(x=factor(day), y={{var}}, col=factor(facet)))+ 
+  geom_boxplot()+
+  xlab('Day after ECMO initiation')+
+  ylab(ylabel)+
+  scale_color_manual('Stroke', values=c('darkorange1','cyan4'))+ #'Any ECMO',,'cyan4'
+  facet_wrap(~facet, scales='fixed', nrow=2) +
+  g.theme +
+  theme(legend.position = "none")
+  
+  return(p)
+  
+}
+
+means_over_time <- function(var, ylabel, log=T) {
+  
+  if (log) {
+    to_stat = group_by(to_plot, day, facet) %>%
+      summarise(mean = mean(log({{var}}), na.rm = TRUE),
+                se = sem(log({{var}}), na.rm = TRUE)) %>%  
+      ungroup() %>%
+      mutate(lower = exp(mean - (z*se)),
+             upper = exp(mean + (z*se)),
+             mean=exp(mean)
+         #day = ifelse(any_ecmo=='Yes', day+0.2, day)
+         ) # jitter x slightly to avoid overlap
+    
+  } else {
+    to_stat = group_by(to_plot, day, facet) %>%
+      summarise(mean = mean({{var}}, na.rm = TRUE),
+            se = sem({{var}}, na.rm = TRUE)) %>%  #sem
+      ungroup() %>%
+      mutate(lower = mean - (z*se),
+         upper = mean + (z*se)
+         ) 
+    
+  }
+  
+p <-to_stat %>%
+  ggplot(aes(x=day, y=mean, ymin=lower, ymax=upper, col=factor(facet)))+
+  geom_point()+
+  geom_errorbar(width=0)+
+  xlab('Day after ECMO initiation')+
+  ylab(ylabel)+
+  facet_wrap(~facet, scales='fixed', nrow=2) +
+  scale_color_manual('Stroke', values=c('darkorange1','cyan4'))+ #'Any ECMO', ,'cyan4'
+  g.theme +
+  theme(legend.position = "none")
+
+return(p)
+  
+}
+
+```
+
+This document plots the lab value trajectories for the first `r fup` days after the start of ECMO support, for `r length(unique(ecmo_daily$pin))` patients who did or did not experience a stroke. 
+
+
+\newpage
+## PaO2
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(pa_o2, 'PaO2')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(pa_o2, 'PaO2')
+tplot
+```
+
+
+\newpage
+## PaCO2
+
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(pa_co2, 'PaCO2')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(pa_co2, 'PaCO2')
+tplot
+```
+
+
+
+\newpage
+## PaO2/FiO2
+
+
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
+tplot
+```
+
+
+
+
+
+
+\newpage
+## Platelet count
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+
+tplot = boxplot_over_time(platelet_count, 'Platelet count')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+
+tplot = means_over_time(platelet_count, 'Platelet count',log=F)
+tplot
+```
+
+
+
+\newpage
+## INR
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(inr, 'INR')
+tplot
+```
+
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(inr, 'INR', log=F)
+tplot
+```
+
+
+
+\newpage
+## APTT
+
+Values over 200 have been excluded.
+
+##### Boxplot over time
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(aptt, 'APTT')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(aptt, 'APTT', log=T)
+tplot
+```
+
+
+
+
+\newpage
+## D-dimer
+
+##### Boxplot over time
+
+Values > 70,000 have been excluded
+
+```{r, fig.width=8}
+
+
+tplot = boxplot_over_time(d_dimer, 'D-dimer')
+
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+
+tplot = means_over_time(d_dimer, 'D-dimer', log=T)
+tplot
+```
+
+
+
+
+\newpage
+## IL-6
+
+##### Boxplot over time
+
+Values > 10,000 have been excluded
+
+```{r, fig.width=8}
+
+tplot = boxplot_over_time(il_6, 'IL-6')
+tplot
+```
+
+##### Plot of means and 95% confidence intervals for the means over time
+
+```{r, fig.width=8}
+
+tplot = means_over_time(il_6, 'IL-6', log=T)
+tplot
+```
+
+
+
