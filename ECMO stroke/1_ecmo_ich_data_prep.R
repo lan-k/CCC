@@ -625,7 +625,19 @@ ecmo_delta_co2 <- combined_ecmo %>%
   rename(ecmo_48_pa_co2 = pa_co2) %>%
   select(pin, ecmo_48_pa_co2)
 
-
+ecmo_PF_after <- combined_ecmo %>%
+  mutate(diff = as.numeric(date_daily - date_ecmo),
+         diff2 = diff - 2) %>%
+  filter( any_ecmo=='Yes',
+          !is.na(pa_co2),
+          !is.na(date_ecmo),
+          diff <= 4, diff > 0) %>% # must be at least one day after ECMO start date
+  group_by(pin) %>%
+  arrange(pin, diff2) %>%
+  slice_min(order_by = diff2, n=1, with_ties = F) %>%  #take the day closest to 48 hours after start
+  ungroup() %>%
+  rename(ecmo_48_pa_o2_fi_o2 = pa_o2_fi_o2) %>%
+  select(pin, ecmo_48_pa_o2_fi_o2)
   
   
 ecmo_patients <- left_join(ecmo_patients, ecmovars %>% 
@@ -641,6 +653,7 @@ ecmo_patients <- left_join(ecmo_patients, ecmovars %>%
   left_join(ecmo_discont, by="pin") %>%
   left_join(ecmo_delta_o2, by="pin") %>%
   left_join(ecmo_delta_co2, by="pin") %>%
+  left_join(ecmo_PF_after, by="pin") %>%
   unique()
  
 

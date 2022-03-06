@@ -2,15 +2,18 @@
 title: "Plots of lab values"
 author: "Lan Kelly"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output:   
-  word_document: 
-  #reference_docx: rmarkdown-styles-SAP.docx
-  reference_docx: WordStylesReference01.docx
+output: 
+  # word_document:
+  # #  #reference_docx: rmarkdown-styles-SAP.docx
+  #  reference_docx: WordStylesReference01.docx
+  html_document:
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
-error=FALSE, comment='', dpi=400)
+error=FALSE, comment='', dpi=300, dev = "tiff") #,cache = TRUE
+                      
 options(knitr.kable.NA = '')
 options(width=1000) # Wide pages
 options(scipen=999) # avoid scientific presentation
@@ -129,15 +132,16 @@ This document plots the lab value trajectories for the first `r fup` days after 
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r PaO2_boxplot, fig.width=4}
+# fig.width=4
 
 tplot = boxplot_over_time(pa_o2, 'PaO2')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r PaO2_geom_means, fig.width=4}
 
 tplot = means_over_time(pa_o2, 'PaO2')
 tplot
@@ -150,15 +154,15 @@ tplot
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r PaCO2_boxplot, fig.width=4}
 
 tplot = boxplot_over_time(pa_co2, 'PaCO2')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r PaCO2_geom_means, fig.width=4}
 
 tplot = means_over_time(pa_co2, 'PaCO2')
 tplot
@@ -173,15 +177,15 @@ tplot
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r FiO2_boxplot, fig.width=4}
 
 tplot = boxplot_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r FiO2_geom_means, fig.width=4}
 
 tplot = means_over_time(pa_o2_fi_o2, 'PaO2/FiO2')
 tplot
@@ -197,7 +201,7 @@ tplot
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r platelet_boxplot, fig.width=4}
 
 
 tplot = boxplot_over_time(platelet_count, 'Platelet count')
@@ -206,8 +210,7 @@ tplot
 
 ##### Plot of means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
-
+```{r platelet_means, fig.width=4}
 
 tplot = means_over_time(platelet_count, 'Platelet count',log=F)
 tplot
@@ -220,7 +223,7 @@ tplot
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r inr_boxplot, fig.width=4}
 
 tplot = boxplot_over_time(inr, 'INR')
 tplot
@@ -229,7 +232,7 @@ tplot
 
 ##### Plot of means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r inr_means, fig.width=4}
 
 tplot = means_over_time(inr, 'INR', log=F)
 tplot
@@ -244,15 +247,15 @@ Values over 200 have been excluded.
 
 ##### Boxplot over time
 
-```{r, fig.width=8}
+```{r aptt_boxplot, fig.width=4}
 
 tplot = boxplot_over_time(aptt, 'APTT')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r aptt_geom_means, fig.width=4}
 
 tplot = means_over_time(aptt, 'APTT', log=T)
 tplot
@@ -268,7 +271,7 @@ tplot
 
 Values > 70,000 have been excluded
 
-```{r, fig.width=8}
+```{r d_dimer_boxplot, fig.width=4}
 
 
 tplot = boxplot_over_time(d_dimer, 'D-dimer')
@@ -276,9 +279,9 @@ tplot = boxplot_over_time(d_dimer, 'D-dimer')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r d_dimer_geom_means, fig.width=4}
 
 
 tplot = means_over_time(d_dimer, 'D-dimer', log=T)
@@ -295,15 +298,15 @@ tplot
 
 Values > 10,000 have been excluded
 
-```{r, fig.width=8}
+```{r il_6_boxplot, fig.width=4}
 
 tplot = boxplot_over_time(il_6, 'IL-6')
 tplot
 ```
 
-##### Plot of means and 95% confidence intervals for the means over time
+##### Plot of geometric means and 95% confidence intervals for the means over time
 
-```{r, fig.width=8}
+```{r il_6_geom_means, fig.width=4}
 
 tplot = means_over_time(il_6, 'IL-6', log=T)
 tplot

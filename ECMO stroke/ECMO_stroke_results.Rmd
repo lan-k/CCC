@@ -3,13 +3,15 @@ title: "ECMO Stroke Results"
 author: "Lan Kelly"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
-  word_document: 
-  reference_docx: rmarkdown-styles-SAP.docx
+  # word_document:
+  # reference_docx: rmarkdown-styles-SAP.docx
+  html_document:
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
-error=FALSE, comment='', dpi=400)
+error=FALSE, comment='', dpi=300, dev = "png") 
 options(knitr.kable.NA = '')
 options(width=1000) # Wide pages
 options(scipen=999) # avoid scientific presentation
@@ -212,6 +214,60 @@ summary(tab2, title='Pre-ECMO characteristics')
 
 ```
 
+
+\newpage
+## Post 48 hour ECMO characteristics
+
+Post ECMO values are the first recorded in the 24-48 hours after ECMO initiation. 
+
+Delta values are post-pre.
+
+Relative delta values are (post-pre)/pre.
+
+```{r, results='asis'}
+library(scales)
+mycontrols  <- tableby.control(test=FALSE, total=T,
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
+
+postecmo_vars <-c("ecmo_48_pa_o2","ecmo_48_pa_co2",
+         "ecmo_48_pa_o2_fi_o2","delta_o2",
+         "delta_co2",
+         "rel_delta_o2" ,"rel_delta_co2")
+
+
+
+tabdata <- ecmo_patients %>%
+  # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
+  #                                     as.character(complication_stroke))) %>%
+  filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
+  mutate(rel_delta_o2 = rel_delta_o2*100,
+         rel_delta_co2 = rel_delta_co2*100) %>%
+  select(all_of(postecmo_vars), stat) %>%
+  set_variable_labels(ecmo_48_pa_o2 = "Post 48 h ECMO PaO2 (mmHg)",
+                      ecmo_48_pa_co2 = "Post 48 h ECMO PaCO2 (mmHg)",
+                      ecmo_48_pa_o2_fi_o2 = "Post 48 h ECMO PaO2/FiO2 (mmHg)",
+                      delta_o2 = "Delta PaO2 (mmHg)",
+                      delta_co2 = "Delta PaCO2 (mmHg)", 
+                      rel_delta_o2 = "Relative Delta PaO2 (%)",
+                      rel_delta_co2 = "Relative Delta PaCO2 (%)",
+                      stat = "Stroke Yes or No"
+                      )
+
+
+formula <- as.formula(paste0("stat ~", paste0(postecmo_vars, collapse="+")))
+
+tab2 <- tableby(formula, data=tabdata, control=mycontrols)
+summary(tab2, title='Post 48 hour ECMO characteristics')
+
+
+```
+
+
+
 \newpage
 ## Characteristics of ECMO run
 
@@ -219,12 +275,16 @@ summary(tab2, title='Pre-ECMO characteristics')
 
 ```{r, results='asis'}
 
-#var_label(tabdata)
-##also include AC before, vasoactive before
+mycontrols  <- tableby.control(test=FALSE, total=T,
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
 
 ecmo_vars <-c( 
          'days_sympt_hosp',"days_icu",'days_hosp', 'days_ecmo',
-         'days_vent','days_vent_ecmo', 'day', 
+         'days_vent','days_vent_ecmo', 'day', 'days_fup',
          "anticoagulants",
          "outcome")
 
@@ -243,6 +303,7 @@ tabdata <- ecmo_patients %>%
                       days_vent_ecmo = "Days from mechanical ventilation to ECMO",
                       days_sympt_hosp="Days from first symptoms to hospitalisation",
                       day='Day put on ECMO',
+                      days_fup = "Days of Follow-up",
                       outcome='Final outcome at hospital discharge (may be after the end of 90 day follow-up)',
                       stat = "Stroke Yes or No")
 
@@ -296,7 +357,7 @@ summary(tab4, title="Characteristics of ECMO support")
 \newpage
 ### Lab values during ECMO support   
 
-This table describes the lab values during ECMO support. For each lab value, data were summarized into a single measure per patient by log-transforming the lab-values, calculating the mean value for each patient and exponentiating. The summary values in the table are the median values from the patient summaries.
+This table describes the lab values during ECMO support. For each lab value, data were summarized into a single measure per patient by log-transforming the lab-values, calculating the mean value for each patient and exponentiating i.e. the geoemtric means per patient. The summary values in the table are the median values of the patient geometric means.
 
 Values of interleukin-6 above 10,000 were excluded since this was considered an upper limit. 
 
