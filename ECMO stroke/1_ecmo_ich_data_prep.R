@@ -104,7 +104,9 @@ patients = select(patients, 'pin', 'site_name','country',income_group,
                   # "ecmo_worst_pa_co2_6hr_before", 'ecmo_continuous_rpt_before',
                   contains("stroke"),
                   #'stroke_during_treatment','stroke_type', 'stroke_group', 
-                  'outcome','date_outcome','date_transfer',
+                  'outcome','date_outcome',
+                  outcome_diagnosed_covid_19,outcome_diagnosis_based_on,
+                  'date_transfer',
                   'treatment_trachoestomy','cause_of_death',
                   #'stroke_during_treatment_side','ecmo_in_elso_registry',
                   'ability_to_self_care', medication_anticoagulation,
@@ -228,6 +230,8 @@ patients[yesnolist] <- as.data.frame(
 
 patients <- patients %>%
   mutate(
+    ecmo_worst_pa_o2_6hr_before = ifelse(ecmo_worst_pa_o2_6hr_before > 300, NA, ecmo_worst_pa_o2_6hr_before),
+    ecmo_worst_pa_co2_6hr_before = ifelse(ecmo_worst_pa_co2_6hr_before > 200, NA, ecmo_worst_pa_co2_6hr_before),
     days_ecmo = as.numeric(date_ecmo_discontinued - date_ecmo + 0.5),
     days_hosp = as.numeric(date_hospital_discharge - date_admission + 0.5),
     days_icu = as.numeric(date_hospital_discharge - date_icu + 0.5),
@@ -249,7 +253,8 @@ daily = select(daily, pin, date_daily, ecmo, platelet_count, "p_h", "aptt", "inr
                #lactate,
                "ast_sgot", 'bilirubin','blood_urea_nitrogen', 
                "lymphocyte_count", 'eotd_anticoagulants', "eotd_anticoagulants_type", 'd_dimer', 'aptt_aptr',
-               "pa_o2", "pa_co2", 'fi_o2','wbc', 'crp',  'troponin_i','il_6','haemoglobin',
+               "pa_o2", "pa_co2", eotd_pa_o2, eotd_pa_co2,
+               'fi_o2','wbc', 'crp',  'troponin_i','il_6','haemoglobin',
                "eotd_haemorrhagic_complication", "eotd_haemorrhagic_complication_source",
                'eotd_peep','pa_o2_fi_o2',
                #
@@ -260,7 +265,13 @@ daily = select(daily, pin, date_daily, ecmo, platelet_count, "p_h", "aptt", "inr
          date_daily = as.Date(date_daily, origin='1970-01-01'),
          il_6 = ifelse(il_6 > 10000, NA_real_, il_6),
          d_dimer=ifelse(d_dimer>70000, NA_real_, d_dimer),
-         aptt=ifelse(aptt>200, NA_real_, aptt)) #remove implausible values
+         aptt=ifelse(aptt>200, NA_real_, aptt),
+         pa_o2 = ifelse(pa_o2 > 300 | pa_o2 < 0, NA, pa_o2),
+         pa_co2 = ifelse(pa_co2 > 200 | pa_co2 < 1, NA, pa_co2),
+         eotd_pa_o2 = ifelse(eotd_pa_o2 > 300, NA, eotd_pa_o2),
+         eotd_pa_co2 = ifelse(eotd_pa_co2 > 200 | eotd_pa_co2 < 1, NA, eotd_pa_co2)
+                                          
+         ) #remove implausible values
 
 
 
@@ -350,9 +361,6 @@ daily = filter(daily, !pin %in% ex)
 
 
 
-
-
-
 ### consort flow chart (March 2021)
 ###Aug 2021 still need to exclude strokes before ecmo date, include only ecmo patients 
 # jpeg('figures/stroke/flow.jpg', width=5.5, height=3.7, units='in', res=300, quality=100)
@@ -382,6 +390,7 @@ daily = filter(daily, !pin %in% ex)
 
 ###fix values for blood gases
 daily$pa_o2[daily$pa_o2 < 40] <- NA  #remove outliers -SCM 20/8/2021
+daily$eotd_pa_o2[daily$eotd_pa_o2 < 40] <- NA  #remove outliers -SCM 20/8/2021
 patients$ecmo_worst_pa_co2_6hr_before[patients$ecmo_worst_pa_co2_6hr_before <= 10] <- NA
 patients$ecmo_highest_fi_o2_6hr_before[patients$ecmo_highest_fi_o2_6hr_before <= 20] <- NA
 
@@ -400,7 +409,13 @@ combined = full_join(patients, daily, by='pin') #%>% unique()
 
 ##add variables from daily to patients
 combined_ecmo <- combined %>% 
-  filter(any_ecmo=='Yes') 
+  filter(any_ecmo=='Yes') %>%
+  mutate(pa_o2=coalesce(eotd_pa_o2, pa_o2),
+         pa_co2=coalesce(eotd_pa_co2, pa_co2),
+         pa_o2_fi_o2 = pa_o2/fi_o2)
+
+# meeting with Gianluigi di Bassi 28/3/2022
+# use eotd values for pa_o2, pa_co2 if not missing, otherwise ISARIC
 
 
 
@@ -566,11 +581,41 @@ ecmo_24 <- combined_ecmo %>%
          ecmo_high_aptt=mymax(aptt),
          ecmo_high_inr=mymax(inr),
          ecmo_start_worst_platelet_count=mymin(platelet_count),
-         ecmo_start_worst_p_h = mymin(p_h),
-         ecmo_start_worst_pa_o2 = mymin(pa_o2),
-         ecmo_start_worst_pa_co2 = mymax(pa_co2)) %>%
+         ecmo_start_worst_p_h = mymin(p_h)
+         # ,ecmo_start_worst_pa_o2 = mymin(pa_o2)
+         # ,ecmo_start_worst_pa_co2 = mymax(pa_co2)
+         ) %>%
   ungroup() %>%
-  select(pin, matches("ecmo_high_|ecmo_start_worst_"))
+  select(pin,matches("ecmo_high_|ecmo_start_worst_"))
+
+
+
+ecmo_24_pa_o2 <- combined_ecmo %>%
+  filter(date_daily >= date_ecmo, any_ecmo=='Yes',
+         !is.na(date_ecmo)) %>% # must be at least one day after ECMO date
+  mutate(diff = as.numeric(date_daily - date_ecmo )) %>%
+  filter(diff <= 1 & diff >= 0) %>%
+  group_by(pin) %>%
+  filter(!is.na(pa_o2)) %>%
+  arrange(pin, diff) %>%
+  slice_min(n=1, order_by="pa_o2", with_ties = F) %>%
+  mutate(ecmo_start_worst_pa_o2 = mymin(pa_o2)) %>%
+  ungroup() %>%
+  select(pin, ecmo_start_worst_pa_o2)
+
+ecmo_24_pa_co2 <- combined_ecmo %>%
+  filter(date_daily >= date_ecmo, any_ecmo=='Yes',
+         !is.na(date_ecmo)) %>% # must be at least one day after ECMO date
+  mutate(diff = as.numeric(date_daily - date_ecmo )) %>%
+  filter(diff <= 1 & diff >= 0) %>%
+  group_by(pin) %>%
+  filter(!is.na(pa_co2)) %>%
+  arrange(pin, diff) %>%
+  slice_max(n=1, order_by="pa_co2", with_ties = F) %>%
+  mutate(ecmo_start_worst_pa_co2 = mymax(pa_co2)) %>%
+  ungroup() %>%
+  select(pin, ecmo_start_worst_pa_co2)
+
 
 #highest values at ecmo discontinuation
 ecmo_discont <- combined_ecmo %>%
@@ -629,7 +674,7 @@ ecmo_PF_after <- combined_ecmo %>%
   mutate(diff = as.numeric(date_daily - date_ecmo),
          diff2 = diff - 2) %>%
   filter( any_ecmo=='Yes',
-          !is.na(pa_co2),
+          !is.na(pa_o2_fi_o2),
           !is.na(date_ecmo),
           diff <= 4, diff > 0) %>% # must be at least one day after ECMO start date
   group_by(pin) %>%
@@ -654,6 +699,8 @@ ecmo_patients <- left_join(ecmo_patients, ecmovars %>%
   left_join(ecmo_delta_o2, by="pin") %>%
   left_join(ecmo_delta_co2, by="pin") %>%
   left_join(ecmo_PF_after, by="pin") %>%
+  left_join(ecmo_24_pa_o2, by="pin") %>%
+  left_join(ecmo_24_pa_co2, by="pin") %>%
   unique()
  
 
@@ -670,12 +717,12 @@ ecmo_patients <- ecmo_patients %>%
       cannula_lumen == "Single lumen" &
         grepl("internal jugular",ecmo_return_cannula_insertion_site) ~ 
         ecmo_return_cannula_size),
-    delta_o2 = ecmo_48_pa_o2 - ecmo_worst_pa_o2_6hr_before ,# ecmo_start_worst_pa_o2,
-    delta_co2 = ecmo_48_pa_co2 - ecmo_worst_pa_co2_6hr_before,#ecmo_start_worst_pa_co2,
-    delta_o2 = ifelse(delta_o2 > 200 | delta_o2 < -150, NA, delta_o2),
-    delta_co2 = ifelse(delta_co2 > 200 | delta_co2 < -150, NA, delta_co2),
-    rel_delta_o2 = delta_o2/ecmo_worst_pa_o2_6hr_before ,# ecmo_start_worst_pa_o2,
-    rel_delta_co2 = delta_co2/ecmo_worst_pa_co2_6hr_before
+    delta_o2 = ecmo_48_pa_o2 - ecmo_worst_pa_o2_6hr_before ,  #,ecmo_start_worst_pa_o2 # ,
+    delta_co2 = ecmo_48_pa_co2 - ecmo_worst_pa_co2_6hr_before ,    ##,ecmo_start_worst_pa_co2 ,,
+    delta_o2 = ifelse(delta_o2 > 150 | delta_o2 < -200, NA, delta_o2),
+    delta_co2 = ifelse(delta_co2 > 150 | delta_co2 < -200, NA, delta_co2),
+    rel_delta_o2 = delta_o2/ecmo_worst_pa_o2_6hr_before,  #  ecmo_start_worst_pa_o2 , ,#
+    rel_delta_co2 = delta_co2/ecmo_worst_pa_co2_6hr_before #  ecmo_start_worst_pa_co2#
     )
 
 
@@ -754,21 +801,22 @@ ecmo_patients <- ecmo_patients %>%
 
 
 
-remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
-       ecmo_discont, ecmovars, PF_before, pre_ecmo,
+remove(a, ecmo_24, ecmo_24_pa_o2,ecmo_24_pa_co2,
+       ecmo_delta_co2, ecmo_delta_o2, 
+       ecmo_discont, ecmovars, ecmo_PF_after, PF_before, pre_ecmo,
        spain_pins, timechecks, timevars, WB, worst_PF_day_before)
 
 
 
 ### flow chart (Feb 2022)
-# jpeg('figures/flow.jpg', width=5.5, height=3.7, units='in', res=300, quality=100)
+
 # 
 # 
 # f = patients %>%
 #   filter(date_ecmo < start_date | is.na(date_ecmo)) %>%
-#   select(pin, age, date_icu, complication_stroke, complication_stroke_date, last_date, 
-#          date_death, date_discharge, date_ecmo, date_hospital_discharge, 
-#          date_ecmo_discontinued, any_ecmo,ecmo_type) 
+#   select(pin, age, date_icu, complication_stroke, complication_stroke_date, last_date,
+#          date_death, date_discharge, date_ecmo, date_hospital_discharge,
+#          date_ecmo_discontinued, any_ecmo,ecmo_type)
 # n_start = nrow(f) # starting number
 # 
 # ## did not start ECMO
@@ -783,7 +831,7 @@ remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
 # so = filter(f3, complication_stroke == "Yes")
 # 
 # n_update = nrow(so)
-# so2 = filter(so, 
+# so2 = filter(so,
 #              complication_stroke_date >= date_ecmo )
 # 
 # 
@@ -799,7 +847,7 @@ remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
 # #exclusions
 # n_no_ecmo = n_start-nf2
 # n_VA =  nf2 - nrow(f3)
-# n_missing_stroke_date = sum(is.na(so$complication_stroke_date)) 
+# n_missing_stroke_date = sum(is.na(so$complication_stroke_date))
 # n_stroke_prior_ecmo = n_update - nrow(so2) # number excluded
 # n_missing_date= nrow(ecmo_patients %>% filter(
 #   !is.na(date_ecmo),
@@ -827,6 +875,10 @@ remove(a, ecmo_24, ecmo_delta_co2, ecmo_delta_o2,
 # sizes=c(1.3,3.3,1.3) / 10
 # props = c(0.36,0.32,0.32) # narrower for first and last
 # 
+# 
+# 
+# # jpeg('figures/flow.jpg', width=5.5, height=3.7, units='in', res=300, quality=100)
+# tiff('paper/Images/flow.tif', width=170, height=80, units='mm', res=300, compression="lzw")
 # plotmat(M, name=labels, pos=pos, box.type = 'rect', box.size=sizes, box.prop = props, curve = 0, arr.pos=0.85)
 # shape::Arrows(x0=0.15, x1=0.3, y0=0.5, y1=0.5, arr.width=0.2, arr.length=0.22, arr.type='triangle')
 # dev.off()

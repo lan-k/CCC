@@ -41,7 +41,7 @@ load( file="Data/JM_CR_red_gas_area_100kit_pen.Rdata")  #penalised versions
 # summary(jointFit1.CR) #not all Rhat <1.05
 
 ## CR ICH
-load( file="Data/JM_CR_red_ICH.Rdata")
+# load( file="Data/JM_CR_red_ICH.Rdata")
 
 jm_hr <- function(jfit, jfitr = NULL) {
   
@@ -79,7 +79,7 @@ jm_hr <- function(jfit, jfitr = NULL) {
                               Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                               Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                               Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                                "Pre-ECMO vasoactive medicine use Yes vs No",
+                                "*Pre-ECMO vasoactive medicine use Yes vs No",
                               Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                               Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                               Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
@@ -310,16 +310,17 @@ hr_data_redu_CR0=survtab0 %>%
                             Variable == "age" ~"Age",
                             Variable == "sexMale" ~"Male vs Female",
                             Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_obesityYes" ~"*Obese Yes vs No",
                             Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             TRUE ~ Variable))
+
 
 hr_data_redu_CR0=bind_rows(headercu,hr_data_redu_CR0) 
 
@@ -338,9 +339,9 @@ surv_forest_redu_CR0 <- hr_data_redu_CR0 %>%
              zero=1,
              # line.margin = 0.5, #.2,
              boxsize = 0.1, #.25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
+             txt_gp = fpTxtGp(label = gpar(cex = 0.7),
+                              ticks = gpar(cex = 0.7),
+                              xlab  = gpar(cex = 0.7)),
              # col = fpColors(box = c("royalblue"),
              #                line = c("darkblue")),
              col = fpColors(box = c("cyan4","darkorange1"),
@@ -348,8 +349,12 @@ surv_forest_redu_CR0 <- hr_data_redu_CR0 %>%
              vertices = TRUE,
              xlab="HR")
 
-surv_forest_redu_CR0
 
+# tiff(file="paper/Images/eFig2.tif", res=300, compression="lzw",
+#      units="mm", width=170, height=100)
+
+surv_forest_redu_CR0
+# dev.off()
 
 # ---- jm_forest_CR_surv ----
 
@@ -395,7 +400,7 @@ hr_data_redu_CR=survtab %>%
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
@@ -474,17 +479,17 @@ jm_hr_data_redu_CR=jm_redu_CR %>%
                             Variable == "age" ~"Age",
                             Variable == "sexMale" ~"Male vs Female",
                             Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_obesityYes" ~"*Obese Yes vs No",
                             Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             Variable == "area(log2(pa_o2))" ~ "Average cumulative PaO2", #"PaO2 (log2-transformed)",
-                            Variable == "area(log2(pa_co2))" ~ "Average cumulative PaCO2", #"PaCO2 (log2-transformed)",
+                            Variable == "area(log2(pa_co2))" ~ "*Average cumulative PaCO2", #"PaCO2 (log2-transformed)",
                             Variable == "value(log2(platelet_count))" ~ "Halving of platelet count",#"Platelet count (log2-transformed)",
                             TRUE ~ Variable)) %>%
   select(!Penalty) #%>%
@@ -567,17 +572,17 @@ jm_hr_data_redu_CR_pen=jm_redu_CR_pen %>%
                             Variable == "age" ~"Age",
                             Variable == "sexMale" ~"Male vs Female",
                             Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_obesityYes" ~"*Obese Yes vs No",
                             Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             Variable == "area(log2(pa_o2))" ~ "Average cumulative PaO2", #"PaO2 (log2-transformed)",
-                            Variable == "area(log2(pa_co2))" ~ "Average cumulative PaCO2", #"PaCO2 (log2-transformed)",
+                            Variable == "area(log2(pa_co2))" ~ "*Average cumulative PaCO2", #"PaCO2 (log2-transformed)",
                             Variable == "value(log2(platelet_count))" ~ "Halving of platelet count",#"Platelet count (log2-transformed)",
                             TRUE ~ Variable)) %>%
   select(!Penalty) #%>%
@@ -602,9 +607,9 @@ jm_forest_redu_CR_pen <- jm_hr_data_redu_CR_pen %>%
              zero=1,
              # line.margin = 0.5, #.2,
              boxsize = 0.1, #.25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
+             txt_gp = fpTxtGp(label = gpar(cex = 0.7),
+                              ticks = gpar(cex = 0.7),
+                              xlab  = gpar(cex = 0.7)),
              # col = fpColors(box = c("royalblue"),
              #                line = c("darkblue")),
              col = fpColors(box = c("cyan4","darkorange1"),
@@ -722,10 +727,10 @@ jm_hr_data_CR_hs=jmhr.CRh %>%
   mutate(HR=paste0(roundz(mean, digits=2), " (",
                    roundz(lower, digits=2),", ",
                    roundz(upper, digits=2),")"),
-         HR=ifelse(Variable == "area(log2(pa_co2)):CRStroke", 
-                   paste0(roundz(mean, digits=2), " (",
-                          roundz(lower, digits=3),", ",
-                          roundz(upper, digits=2),")") ,HR),
+         # HR=ifelse(Variable == "area(log2(pa_co2)):CRStroke", 
+         #           paste0(roundz(mean, digits=2), " (",
+         #                  roundz(lower, digits=3),", ",
+         #                  roundz(upper, digits=2),")") ,HR),
          HR=ifelse(Penalty == "Penalized", paste0(" ", HR) ,HR)) %>%
   mutate(mean=ifelse(grepl("platelet_count", Variable), 1/mean, mean),
          lower2=ifelse(grepl("platelet_count", Variable), 1/upper, lower),
@@ -777,6 +782,14 @@ jm_forest_CR_hs <- jm_hr_CR_hs %>%
   # filter(Outcome == "Stroke") %>%
   mutate(Variable = case_when(Outcome=="Stroke"~ paste0("Stroke: ", Variable),
                               Outcome=="Death"~ paste0("Death: ", Variable),
+                              TRUE ~ Variable),
+         Variable = case_when(Variable == "Stroke: Obese Yes vs No" ~ "*Stroke: Obese Yes vs No",
+                              Variable == "Stroke: Pre-ECMO vasoactive medicine use Yes vs No" ~
+                                "*Stroke: Pre-ECMO vasoactive medicine use Yes vs No",
+                              Variable == "Stroke: Average cumulative PaCO2" ~
+                                "*Stroke: Average cumulative PaCO2",
+                              Variable == "Death: Age" ~"*Death: Age",
+                              Variable == "Death: During vs post ECMO" ~"*Death: During vs post ECMO",
                               TRUE ~ Variable)) %>%
   select(!Outcome) %>%
   group_by(Penalty) %>%
@@ -790,9 +803,9 @@ jm_forest_CR_hs <- jm_hr_CR_hs %>%
              zero=1,
              # line.margin = 0.5, #.2,
              boxsize = 0.1, #.25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
+             txt_gp = fpTxtGp(label = gpar(cex = 0.7),
+                              ticks = gpar(cex = 0.7),
+                              xlab  = gpar(cex = 0.7)),
              # col = fpColors(box = c("royalblue"),
              #                line = c("darkblue")),
              col = fpColors(box = c("cyan4","darkorange1"),
@@ -800,8 +813,52 @@ jm_forest_CR_hs <- jm_hr_CR_hs %>%
              vertices = TRUE,
              xlab="HR")
 
-jm_forest_CR_hs
 
+# tiff(file="paper/Images/Fig4_v2.tif", res=300, compression="lzw",
+#      units="mm", width=170, height=170)
+jm_forest_CR_hs
+# dev.off()
+
+# ---- jm_forest_CR_hs_nodeath ----
+
+jm_CR_hs_nodeath <- jm_hr_CR_hs %>% 
+  filter(Outcome == "Stroke") 
+  
+jm_forest_CR_hs_nodeath <-  bind_rows(headerc,jm_CR_hs_nodeath)  %>%
+  mutate(
+         Variable = case_when(Variable == "Obese Yes vs No" ~ "*Obese Yes vs No",
+                              Variable == "Pre-ECMO vasoactive medicine use Yes vs No" ~
+                                "*Pre-ECMO vasoactive medicine use Yes vs No",
+                              Variable == "Average cumulative PaCO2" ~
+                                "*Average cumulative PaCO2",
+                              TRUE ~ Variable)) %>%
+  select(!Outcome) %>%
+  group_by(Penalty) %>%
+  forestplot(labeltext = c(Variable, HR), #
+             graph.pos=2,
+             clip=c(0.01, 20),
+             xticks = xticks, #c(.01, 0.02, 0.1, 0.2, 1, 2, 10),
+             title = title,
+             fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
+             xlog = T, 
+             zero=1,
+             # line.margin = 0.5, #.2,
+             boxsize = 0.1, #.25,
+             txt_gp = fpTxtGp(label = gpar(cex = 0.7),
+                              ticks = gpar(cex = 0.7),
+                              xlab  = gpar(cex = 0.7)),
+             # col = fpColors(box = c("royalblue"),
+             #                line = c("darkblue")),
+             col = fpColors(box = c("cyan4","darkorange1"),
+                            line = c("cyan4","darkorange1")),
+             vertices = TRUE,
+             xlab="HR")
+
+
+# tiff(file="paper/Images/Fig4.tif", res=300, compression="lzw",
+#      units="mm", width=170, height=120)
+jm_forest_CR_hs_nodeath
+# dev.off()
 
 
 # ---- jm_forest_CR_ICH ----

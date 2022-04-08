@@ -34,7 +34,9 @@ names(patients)
 
 
 patients <- patients %>%
-  select(pin, site_name, country, sex, ethnicity, bmi, age, outcome, diagnosis_coronavirus, diagnosis_coronavirus_type,
+  select(pin, site_name, country, sex, ethnicity, bmi, age, 
+         outcome, outcome_diagnosed_covid_19,outcome_diagnosis_based_on,
+         diagnosis_coronavirus, diagnosis_coronavirus_type,
          starts_with("comorbidity"),
          contains("stroke"),
          starts_with("med"),
@@ -402,7 +404,9 @@ daily <- daily %>%
          'ecmo',  #ecmo_type is in patients dataframe
          platelet_count, 'p_h', "aptt", "aptr", "aptt_aptr", "inr", 
          alt_sgpt, "ast_sgot", 'bilirubin','d_dimer',
-         'blood_urea_nitrogen', 'hco3', 'pa_co2','pa_o2', 'pa_o2_fi_o2', 'fi_o2',
+         'blood_urea_nitrogen', 'hco3', 'pa_co2','pa_o2', 
+         eotd_pa_o2, eotd_pa_co2,
+         'pa_o2_fi_o2', 'fi_o2',
          lactate,
          'eotd_anticoagulants', "eotd_anticoagulants_type",
          "eotd_haemorrhagic_complication", # 4.52 Haemorrhagic Complication 1

@@ -63,7 +63,7 @@ univ <- function(var,var2=var, outcome= "any_stroke", df) {
 }
 
 
-univ_compete <- function(var,var2=var,stat=status2, stype="Stroke", df) {
+univ_compete <- function(var,var2=var,stat=status2, stype="Stroke", df) { #stat=status2
   
   ##descriptives
   
@@ -145,8 +145,18 @@ ecmo_patients <- ecmo_patients %>%
          group="ECMO patients",
          sex=relevel(factor(sex), ref="Female"),
          age50=age-50,
-         rel_o2_plus50 = ifelse(!is.na(rel_delta_o2),rel_delta_o2 > 0.5, NA),
-         rel_co2_neg50 = ifelse(!is.na(rel_delta_co2),rel_delta_co2 < -0.5, NA),
+         # delta_o2 = ifelse(delta_o2 > 100 | delta_o2 < -100, NA, delta_o2),
+         # delta_co2 = ifelse(delta_co2 > 100 | delta_co2 < -100, NA, delta_co2),
+         del_o2_plus50 = ifelse(!is.na(rel_delta_o2),
+                                delta_o2 < -25 | delta_o2 > 25, NA),
+         del_co2_neg50 = ifelse(!is.na(delta_co2),
+                                delta_co2 < -25 | delta_co2 > 25, NA),
+         rel_delta_o2t = ifelse(rel_delta_o2 < -1 | rel_delta_o2 > 1, NA, rel_delta_o2),
+         rel_delta_co2t = ifelse(rel_delta_co2 < -1 | rel_delta_co2 > 1, NA, rel_delta_co2),
+         rel_o2_plus = ifelse(!is.na(rel_delta_o2t),rel_delta_o2t >= 0.5, NA),
+         rel_co2_neg = ifelse(!is.na(rel_delta_co2t), rel_delta_co2t < -0.5, NA),
+         pc_under200 = ecmo_start_worst_platelet_count < 200,
+         # ecmo_start_worst_platelet_count = ecmo_start_worst_platelet_count/100,
          current_smoker = relevel(factor(case_when(comorbidity_smoking== "Current Smoker" ~ "Yes",
                                                    !is.na(comorbidity_smoking) ~ "No")),ref="No"),
          ever_smoker = relevel(factor(case_when(comorbidity_smoking %in% c("Current Smoker",
@@ -166,11 +176,11 @@ ecmo_patients <- ecmo_patients %>%
                              as.character(status) == "Stroke" ~ 1,
                              as.character(status) == "Death" ~ 2),
          status2 = factor(status2, 0:2, labels=c("Censor", "Stroke", "Death")),
-         status_ICH = case_when(stroke_death %in% c("Missing","No Stroke",
-                                                    "Discharged") ~ 0,
-                                stroke_death  == "Hemorrhagic stroke" ~ 1,
-                                stroke_death  == "Other stroke" ~ 2,
-                                stroke_death == "Death" ~ 3),
+         status_ICH = case_when(stroke_death %in% c("Missing","No Stroke") ~ 0,
+                                stroke_death  == "Discharged" ~ 1,
+                                stroke_death  == "Hemorrhagic stroke" ~ 2,
+                                stroke_death  == "Other stroke" ~ 3,
+                                stroke_death == "Death" ~ 4),
          status_ICH = factor(status_ICH, 0:3, 
                              labels=c("Censor", "Hemorrhagic Stroke", 
                                       "Other stroke","Death")))
@@ -178,14 +188,15 @@ ecmo_patients <- ecmo_patients %>%
 
 ecmo_daily <- ecmo_patients %>% 
   select(pin,days_fup,income_region, stroke_death,
-         status, status_ICH,stroke_ICH,
+         status, status2,status_ICH,stroke_ICH,
          ac_before, era,
          any_stroke,comp_stroke_death,
          delta_o2, delta_co2,
          rel_delta_o2, rel_delta_co2,
-         rel_o2_plus50,rel_co2_neg50,
+         del_o2_plus50,del_co2_neg50,
+         rel_o2_plus,rel_co2_neg,
          days_vent_ecmo, days_vent_ecmo5, 
-         ecmo_worst_pa_o2_fi_o2_before, age50,
+         ecmo_worst_pa_o2_fi_o2_before, ecmo_start_worst_platelet_count, age50,
          current_smoker, ethnic_white, pregnant,era1_0, era2_1 )  %>% 
   left_join(combined_ecmo %>% select(!c(days_vent_ecmo, pregnant)) %>%
               filter(any_ecmo=='Yes', !is.na(date_daily)), by="pin") %>%
@@ -241,6 +252,7 @@ data.ids0e <- ecmo_daily %>% # ecmo_daily  %>% mutate(age_day = age + day) %>%
          status2 = factor(status2, 0:2, labels=c("Censor", "Stroke", "Death")),
          status3 = as.numeric(status %in% c("Stroke","Death"))) %>% 
   select(!c(p_h, pa_o2, pa_co2,platelet_count,d_dimer, il_6, aptt,inr, haemoglobin)) 
+
 
 
 
@@ -356,12 +368,14 @@ g1 <- ggcompetingrisks(fit1,
                        ggtheme = theme_cowplot(),
                        group=group,
                        xlab = "Days since ECMO initiation",
-                       title="Cumulative Incidence")  + 
-  scale_fill_jco(labels=c("Alive", "Death","Discharged","Stroke"))
+                       ylab="Cumulative Incidence",
+                       title="")  + 
+  scale_fill_jco(labels=c("Alive", "Death","Discharged","Stroke"), name="")
 
-
+# tiff(file="paper/Images/Fig1.tif", res=300, compression="lzw",
+     # units="mm", width=170, height=120)
 g1
-
+# dev.off()
 
 # ---- ci_curve2 ----
 fit2 <- survfit(Surv(days_fup, status2, type="mstate") ~ group, 
@@ -381,24 +395,28 @@ g2
 # ---- test_linearity ----
 ##test linearity of continuous variables
 tdat <- data.ids0 %>% 
-  select(pin, tstart, tstop, any_stroke,ecmo_worst_pa_o2_fi_o2_before,
-         sofa,
-         age, age50, days_vent_ecmo, days_vent_ecmo5) %>%
-  mutate(days_vent_ecmo6 = days_vent_ecmo - 6,
-         days_vent_ecmo4 = days_vent_ecmo - 4) %>%
+  select(pin, tstart, tstop, any_stroke,
+         # ,ecmo_worst_pa_o2_fi_o2_before,sofa,
+         delta_o2, delta_co2,
+         age, age50
+         # , days_vent_ecmo, days_vent_ecmo5
+         ) %>%
+  # mutate(days_vent_ecmo6 = days_vent_ecmo - 6,
+  #        days_vent_ecmo4 = days_vent_ecmo - 4) %>%
   na.omit()
 tfit <-  coxph(Surv(tstart, tstop, any_stroke) ~ 
-                 I(age+age^2 )
-               + I(age50 + age50^2)
+               #   I(age+age^2 )
+               # + I(age50 + age50^2)
                # log(age) + log(age)^2
-               + I(days_vent_ecmo + sqrt(days_vent_ecmo))
-               +  log2(days_vent_ecmo)
-               +  I(days_vent_ecmo5 + days_vent_ecmo5^2)
+               # + I(days_vent_ecmo + sqrt(days_vent_ecmo))
+               # +  log2(days_vent_ecmo)
+               # +  I(days_vent_ecmo5 + days_vent_ecmo5^2)
                # + days_vent_ecmo + days_vent_ecmo^2
-               + ecmo_worst_pa_o2_fi_o2_before  
-               + log2(ecmo_worst_pa_o2_fi_o2_before)
-               #+ delta_o2 + delta_co2
-               + I(sofa + sofa^2)
+               # + ecmo_worst_pa_o2_fi_o2_before  
+               # + log2(ecmo_worst_pa_o2_fi_o2_before)
+               + pspline(delta_o2) + pspline(delta_co2)
+               # + delta_o2 + delta_co2
+               # + I(sofa + sofa^2)
                +  cluster(pin, site_name), 
                data = tdat, id=pin,
                na.action = na.omit)
@@ -432,11 +450,18 @@ hr_cardiac <- univ("comorbidity_chronic_cardiac_disease",df= ecmo_patients)
 # (hr_pregnant <- univ("pregnant",df= data.ids0))
 hr_hypertension <- univ("comorbidity_hypertension",df= ecmo_patients)
 hr_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
-              var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
+              var2="log2(1/ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
 hr_sofa <- univ(var="sofa",#var2="sofa + I(sofa^2)",
                 df= ecmo_patients)
-hr_rel_o2_plus50 <- univ(var="rel_o2_plus50",df= ecmo_patients)
-hr_rel_co2_neg50 <- univ(var="rel_co2_neg50",df= ecmo_patients)
+hr_del_o2_plus50 <- univ(var="del_o2_plus50",df= ecmo_patients)
+hr_del_co2_neg50 <- univ(var="del_co2_neg50",df= ecmo_patients)
+hr_rel_o2_plus <- univ(var="rel_o2_plus",df= ecmo_patients)
+hr_rel_co2_neg <- univ(var="rel_co2_neg",df= ecmo_patients)
+
+
+hr_pc_under200 <- univ(var="pc_under200",df= ecmo_patients)
+hr_pc <- univ(var="ecmo_start_worst_platelet_count",
+              var2="log2(1/ecmo_start_worst_platelet_count)", df= ecmo_patients)
 hr_region <- univ("income_region",df= ecmo_patients)
 hr_era <- univ("era",df= ecmo_patients)
 # (hr_era1_0 <- univ("era1_0",df= ecmo_patients))
@@ -458,8 +483,12 @@ hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,
                             hr_cannula_lumen, 
                             hr_pf,
                             hr_sofa,
-                            hr_rel_o2_plus50,
-                            hr_rel_co2_neg50, 
+                            # hr_del_o2_plus50,
+                            # hr_del_co2_neg50,
+                            hr_rel_o2_plus,
+                            hr_rel_co2_neg,
+                            hr_pc,
+                            # hr_pc_under200,
                             hr_region, hr_era
 )) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
@@ -470,7 +499,11 @@ hr_data <- data.frame(rbind(hr_ecmo,hr_age, hr_sex,
 hr_data$Variable = rownames(hr_data)
 rownames(hr_data) <- c()
 
+
+
+
 ##nice labels
+
 hr_data <- hr_data %>%
   mutate(Variable=case_when(Variable == "ecmo" ~"During vs post ECMO",
                             Variable == "age" ~"Age",
@@ -478,23 +511,28 @@ hr_data <- hr_data %>%
                             Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
                             Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
                             Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_obesityYes" ~"*Obese Yes vs No",
                             Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
                               "Co-morbid Cardiac Disease Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
-                            Variable == "sofa" ~"SOFA",
-                            Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
-                            Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+                            Variable == "log2(1/ecmo_worst_pa_o2_fi_o2_before)" ~"Halving of P/F ratio at Baseline",
+                            Variable == "sofa" ~ "*SOFA",
+                            Variable == "del_o2_plus50TRUE" ~"Delta O2 < -25 or > 25 vs -25 to 25",
+                            Variable == "del_co2_neg50TRUE" ~"Delta CO2 < -25 or > 25 vs -25 to 25",
+                            Variable == "rel_o2_plusTRUE" ~"Relative Delta O2 \u2265 50% vs < 50%",
+                            Variable == "rel_co2_negTRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+                            Variable == "log2(1/ecmo_start_worst_platelet_count)" ~ 
+                              "*Halving of Platelet Count at Baseline" ,
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             TRUE ~ Variable))
+
 
 header <- tibble(Variable = c("", "Variable"),
                  N = c("","N"),
@@ -502,7 +540,10 @@ header <- tibble(Variable = c("", "Variable"),
 
 
 
+
 hr_data <- bind_rows(header,hr_data)
+
+
 
 hr_forest <- hr_data %>% 
   forestplot(labeltext = c(Variable, N, HR), 
@@ -515,6 +556,7 @@ hr_forest <- hr_data %>%
              txt_gp = fpTxtGp(label = gpar(cex = 0.8),
                               ticks = gpar(cex = 0.8),
                               xlab  = gpar(cex = 0.8)),
+
              col = fpColors(box = "royalblue",
                             line = "darkblue"),
              vertices = TRUE,
@@ -548,11 +590,17 @@ shr_hypertension <- univ_compete("comorbidity_hypertension",
                                  df= ecmo_patients)
 # (shr_neuro <- univ_compete("comorbidity_chronic_neurological_disorder",df= data.ids0))
 shr_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
-                       var2="log2(ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
+                       var2="log2(1/ecmo_worst_pa_o2_fi_o2_before)",df= ecmo_patients)
 shr_sofa <- univ_compete(var= "sofa",#var2="sofa + sofa^2" ,
                          df= ecmo_patients)
-shr_rel_o2_plus50 <- univ_compete(var="rel_o2_plus50",df= ecmo_patients)
-shr_rel_co2_neg50 <- univ_compete(var="rel_co2_neg50",df= ecmo_patients)
+shr_del_o2_plus50 <- univ_compete(var="del_o2_plus50",df= ecmo_patients)
+shr_del_co2_neg50 <- univ_compete(var="del_co2_neg50",df= ecmo_patients)
+shr_rel_o2_plus <- univ_compete(var="rel_o2_plus",df= ecmo_patients)
+shr_rel_co2_neg <- univ_compete(var="rel_co2_neg",df= ecmo_patients)
+shr_pc_under200 <- univ_compete(var="pc_under200",df= ecmo_patients)
+shr_pc <- univ_compete(var="ecmo_start_worst_platelet_count",
+                       var2="log2(1/ecmo_start_worst_platelet_count)", df= ecmo_patients)
+
 shr_region <- univ_compete("income_region",
                            df= ecmo_patients)
 shr_era <- univ_compete("era",df= ecmo_patients)
@@ -574,8 +622,12 @@ shr_data <- data.frame(rbind(shr_ecmo,shr_age, shr_sex,shr_vent_ecmo,
                              shr_cannula_lumen, 
                              shr_pf,
                              shr_sofa,
-                             shr_rel_o2_plus50,
-                             shr_rel_co2_neg50,
+                             # shr_del_o2_plus50,
+                             # shr_del_co2_neg50,
+                             shr_rel_o2_plus,
+                             shr_rel_co2_neg,
+                             # shr_pc_under200,
+                             shr_pc,
                              shr_region, shr_era
 )) %>%
   rename(mean=est) %>% #, lower=V2, upper = V3
@@ -594,20 +646,24 @@ shr_data <- shr_data %>%
                             Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
                             Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
                             Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-                            Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
+                            Variable == "comorbidity_obesityYes" ~"*Obese Yes vs No",
                             Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
                             Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
                             Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
                               "Co-morbid Cardiac Disease Yes vs No",
                             Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
                             Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-                              "Pre-ECMO vasoactive medicine use Yes vs No",
+                              "*Pre-ECMO vasoactive medicine use Yes vs No",
                             Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
                             Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-                            Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
-                            Variable == "sofa" ~"SOFA",
-                            Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
-                            Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+                            Variable == "log2(1/ecmo_worst_pa_o2_fi_o2_before)" ~"Halving of P/F ratio at Baseline",
+                            Variable == "sofa" ~ "*SOFA",
+                            Variable == "del_o2_plus50TRUE" ~"Delta O2 < -25 or > 25 vs -25 to 25",
+                            Variable == "del_co2_neg50TRUE" ~"Delta CO2 < -25 or > 25 vs -25 to 25",
+                            Variable == "rel_o2_plusTRUE" ~"Relative Delta O2 \u2265 50% vs < 50%",
+                            Variable == "rel_co2_negTRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
+                            Variable == "log2(1/ecmo_start_worst_platelet_count)" ~ 
+                              "*Halving of Platelet Count at Baseline" ,
                             Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
                             Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
                             TRUE ~ Variable))
@@ -615,6 +671,7 @@ shr_data <- shr_data %>%
 headerc <- tibble(Variable = c("", "Variable"),
                   N=c("","N"),
                   sHR = c("", "subHR (95% CI)"))
+
 
 
 
@@ -669,346 +726,126 @@ all_forest <- surv_hr_data %>%
              zero=1,
              line.margin = 0.5, #.2,
              boxsize = .25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
+             txt_gp = fpTxtGp(label = gpar(cex = 0.7),
+                              ticks = gpar(cex = 0.7),
+                              xlab  = gpar(cex = 0.7)),
              col = fpColors(box = c("cyan4","darkorange1"),
                             line = c("cyan4","darkorange1")),
              vertices = TRUE,
              xlab="subHR/HR")
+# tiff(file="paper/Images/Fig2.tif", res=300, compression="lzw",
+#      units="mm", width=170, height=170)
 
 all_forest
 
+# dev.off()
+# ---- cox_CR_spline ----
+library(ggplot2)
+library(ggpubr)
+
+testdata <- ecmo_patients %>%
+  mutate(delta_o2 = ifelse(delta_o2 > 60 | delta_o2 < -60, NA, delta_o2),
+        delta_co2 = ifelse(delta_co2 > 75 | delta_co2 < -75, NA, delta_co2),
+        rel_delta_o2 = 100* ifelse(rel_delta_o2> 1, NA, rel_delta_o2),
+        rel_delta_co2 = 100 * ifelse(rel_delta_co2> 1 | rel_delta_co2 < -0.75, 
+                                     NA, rel_delta_co2),
+        ecmo_worst_pa_co2_6hr_before = ifelse(ecmo_worst_pa_co2_6hr_before > 120,
+                                              NA, ecmo_worst_pa_co2_6hr_before))
+
+hr_spline <- function(var, xtitle = NULL, degf = 3) {
+  
+  form <- as.formula(
+    paste0("Surv(tstart, tstop, any_stroke) ~ cluster(site_name) + pspline("
+           , paste0(var),", df=",as.character(degf), ")"))
+  
+  
+  
+  c <-  coxph(form, 
+              data = testdata, id=pin,
+              na.action = na.omit, x=T)
+  
+  g = termplot(c, term = 1, se = T,plot = F)
+  
+  # npat <- data.ids0 %>% select(var, pin, site_name) %>% na.omit() %>% pull(pin) %>% unique()
+  xtitle = paste0(xtitle, " (N=",as.character(c$n),")")
+  
+  
+  newdf = data.frame(g) 
+  colnames(newdf) = c("var", "y", "se")
+  newdf <- newdf%>%
+    mutate(hr=exp(y), 
+           lci=exp(y-1.96*se),
+           uci=exp(y+1.96*se))
+  
+  
+  p <- newdf %>% 
+    ggplot(aes(x=var, y=hr)) +
+    geom_line(col='darkorange1') +
+    geom_ribbon(aes(ymin = lci, ymax = uci), alpha = 0.2) +
+    geom_hline(yintercept = 1, linetype="dashed", colour="darkgrey") +
+    xlab(xtitle) + ylab("HR") +
+    theme_bw()
+  return(p)
+  
+}
+
+plot_o2_pre <- hr_spline("ecmo_worst_pa_o2_6hr_before", "Pre-ECMO O2 (mmHg)",degf = 2) #
+plot_co2_pre <- hr_spline("ecmo_worst_pa_co2_6hr_before", "Pre-ECMO CO2 (mmHg)",degf = 2) #
+
+plot_del_o2 <- hr_spline("delta_o2", "Delta O2 (mmHg)",degf = 2) #
+plot_del_co2 <- hr_spline("delta_co2", "Delta CO2 (mmHg)",degf = 2) #
+
+plot_rel_del_o2 <- hr_spline("rel_delta_o2", "Relative Delta O2 (%)",degf = 2) #
+plot_rel_del_co2 <- hr_spline("rel_delta_co2", "Relative Delta CO2 (%)",degf = 2) #
 
 
-# ---- ci_curve_ICH ----
-
-stroke_i = 'purple'
-stroke = 'pink'
-stroke_h = 'dark red'
-discharge = 'forestgreen'
-death = 'black'
-
-
-fit_ICH <- survfit(Surv(days_fup, status_ICH, type="mstate") ~ group, 
-                   data=ecmo_patients)
-g_ICH <- ggcompetingrisks(fit_ICH,
-                          ggtheme = theme_cowplot(),
-                          group=group,
-                          xlab = "Days since ECMO initiation",
-                          title="Cumulative Incidence")  + 
-  # scale_fill_manual(values=c(discharge,death,stroke_h,stroke_i),
-  #   labels=c("Alive", "Death","Hemorrhagic Stroke","Other Stroke"))
-  scale_fill_jco(labels=c("Alive", "Death","Hemorrhagic Stroke","Other Stroke"))
-
-g_ICH
-
-# ---- uni_surv_ICH ----
-##repeat univariate analysis for ICH stroke only
-
-xticks <- c(0,1,2,4,6,8)
-xtlab <- rep(TRUE, length.out = length(xticks))
-attr(xticks, "labels") <- xtlab
-
-# hr_i_ecmo <- univ("ecmo",outcome="stroke_ICH", df= data.ids0e)  #small numbers
-hr_i_age <- univ(var="age",#var2="age + age^2",
-                 outcome="stroke_ICH",df= ecmo_patients)
-hr_i_sex <- univ("sex",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_vent_ecmo <- univ(var="days_vent_ecmo5",
-                       # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
-                       outcome="stroke_ICH",df= ecmo_patients)
-hr_i_ethnic <- univ("ethnic_white",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_smoke <- univ("current_smoker",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_cannula_lumen <- univ("cannula_lumen",outcome="stroke_ICH",df= ecmo_patients)
-# hr_i_ac_before <- univ("ac_before",outcome="stroke_ICH",df= data.ids0) 
-hr_i_anticoagulants <- univ("eotd_anticoagulants",outcome="stroke_ICH",df= data.ids0a)
-hr_i_obesity <- univ( var= "comorbidity_obesity",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_vasoactive <- univ("ecmo_vasoactive_drugs_before",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_diabetes <- univ( var= "comorbidity_diabetes",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_cardiac <- univ("comorbidity_chronic_cardiac_disease",outcome="stroke_ICH",df= ecmo_patients)
-# hr_i_neuro <- univ("comorbidity_chronic_neurological_disorder",outcome="stroke_ICH",df= ecmo_patients)
-# (hr_i_pregnant <- univ("pregnant",outcome="stroke_ICH",df= data.ids0))
-hr_i_hypertension <- univ("comorbidity_hypertension",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_pf <- univ(var="ecmo_worst_pa_o2_fi_o2_before",
-                var2="log2(ecmo_worst_pa_o2_fi_o2_before)",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_sofa <- univ(var="sofa",#var2="sofa + sofa^2",
-                  outcome="stroke_ICH",df= ecmo_patients)
-hr_i_rel_o2_plus50 <- univ(var="rel_o2_plus50",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_rel_co2_neg50 <- univ(var="rel_co2_neg50",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_region <- univ("income_region",outcome="stroke_ICH",df= ecmo_patients)
-hr_i_era <- univ("era",outcome="stroke_ICH",df= ecmo_patients)
+plot_ph <- hr_spline("ecmo_start_worst_p_h", "pH",degf = 2) #
+plot_aptt <- hr_spline("ecmo_high_aptt", "aPTT",degf = 2)
+plot_pc <- hr_spline("ecmo_start_worst_platelet_count", "Platelet Count",degf = 2)
+# plot_d_dimer <- hr_spline("pre_ecmo_high_d_dimer", "D-Dimer",degf = 5)
+plot_age <- hr_spline("age", "Age",degf = 2)
+plot_vent <- hr_spline("days_vent_ecmo", "Ventilated days",degf = 2)
+plot_sofa <- hr_spline("sofa", "SOFA",degf = 3)
 
 
-# fisher.test(ecmo_patients$pregnant, ecmo_patients$any_stroke)
+ggarrange(          
+  plot_rel_del_o2 + ggtitle("(a)") + theme(plot.title = element_text(hjust = 0.5)), 
+  plot_rel_del_co2+ ggtitle("(b)") + theme(plot.title = element_text(hjust = 0.5)), 
+  ncol=2, nrow=1)
 
-### forestplot
 
-hr_i_data <- data.frame(rbind(#hr_i_ecmo,
-  hr_i_age, hr_i_sex,
-  hr_i_vent_ecmo,
-  hr_i_ethnic,
-  hr_i_smoke, hr_i_obesity, 
-  hr_i_diabetes, hr_i_cardiac,
-  hr_i_hypertension, 
-  # hr_i_neuro,
-  hr_i_vasoactive,
-  # hr_i_ac_before,
-  hr_i_anticoagulants,
-  hr_i_cannula_lumen, 
-  hr_i_pf,
-  hr_i_sofa,
-  hr_i_rel_o2_plus50,
-  hr_i_rel_co2_neg50,
-  hr_i_region, hr_i_era
-)) %>%
-  rename(mean=est) %>% #, lower=V2, upper = V3
-  mutate(HR=paste0(roundz(mean, digits=2), " (",
-                   roundz(lower, digits=2),", ",
-                   roundz(upper, digits=2),")"),
-         N=as.character(N))
-hr_i_data$Variable = rownames(hr_i_data)
-rownames(hr_i_data) <- c()
-
-##nice labels
-hr_i_data <- hr_i_data %>%
-  mutate(Variable=case_when(#Variable == "ecmo" ~"During vs post ECMO",
-    Variable == "age" ~"Age",
-    Variable == "sexMale" ~"Male vs Female",
-    Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
-    Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
-    Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-    Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
-    Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
-    Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
-    Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
-      "Co-morbid Cardiac Disease Yes vs No",
-    Variable == "comorbidity_chronic_neurological_disorderYes" ~
-      "Co-morbid Chronic Neurological Disorder Yes vs No",
-    Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
-    Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
-    Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-      "Pre-ECMO vasoactive medicine use Yes vs No",
-    Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
-    Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
-    Variable == "sofa" ~"SOFA",
-    Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
-    Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
-    Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
-    Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
-    TRUE ~ Variable))
-
-header <- tibble(Variable = c("", "Variable"),
-                 N = c("","N"),
-                 HR = c("", "HR (95% CI)"))
+ggarrange(plot_del_o2 + ggtitle("(a)") + theme(plot.title = element_text(hjust = 0.5)),
+          plot_del_co2+ ggtitle("(b)") + theme(plot.title = element_text(hjust = 0.5)),
+          plot_rel_del_o2 + ggtitle("(c)") + theme(plot.title = element_text(hjust = 0.5)),
+          plot_rel_del_co2+ ggtitle("(d)") + theme(plot.title = element_text(hjust = 0.5)),
+          ncol=2, nrow=2)
 
 
 
-hr_i_data <- bind_rows(header,hr_i_data)
 
-hr_i_forest <- hr_i_data %>% 
-  forestplot(labeltext = c(Variable, N, HR), 
-             title = "Hemorrhagic Stroke within 90 days of ECMO",
-             graph.pos=3,
-             xticks=xticks,
-             boxsize=0.25,
-             xlog = F, 
-             zero=1,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
-             col = fpColors(box = "royalblue",
-                            line = "darkblue"),
-             vertices = TRUE,
-             xlab="Hazard Ratio")
 
-hr_i_forest
-
-# ---- subHR_ICH ----
-# shr_i_ecmo <- univ_compete("ecmo", stat=status_ICH, stype="Hemorrhagic Stroke",
-#                            df= data.ids0e)  #small numbers
-shr_i_age <- univ_compete(var="age",stat=status_ICH, #var2="age + age^2",
-                          stype="Hemorrhagic Stroke",df= ecmo_patients)
-shr_i_sex <- univ_compete("sex",stat=status_ICH, stype="Hemorrhagic Stroke",df= ecmo_patients)
-shr_i_ethnic <- univ_compete("ethnic_white",stat=status_ICH, stype="Hemorrhagic Stroke",
-                             df= ecmo_patients)
-shr_i_smoke <- univ_compete("current_smoker",stat=status_ICH, stype="Hemorrhagic Stroke",
-                            df= ecmo_patients)
-shr_i_vent_ecmo <- univ_compete(var="days_vent_ecmo5",
-                                # var2="days_vent_ecmo5 + days_vent_ecmo5^2",
-                                stat=status_ICH, stype="Hemorrhagic Stroke",
-                                df= ecmo_patients)
-shr_i_cannula_lumen <- univ_compete("cannula_lumen",
-                                    stat=status_ICH, stype="Hemorrhagic Stroke",
-                                    df= ecmo_patients)
-# shr_i_ac_before <- univ_compete("ac_before",stat=status_ICH, stype="Hemorrhagic Stroke",
-#                                 df= data.ids0) 
-shr_i_anticoagulants <- univ_compete("eotd_anticoagulants",
-                                     stat=status_ICH, stype="Hemorrhagic Stroke",
-                                     df= data.ids0a)
-shr_i_obesity <- univ_compete( var= "comorbidity_obesity",
-                               stat=status_ICH, stype="Hemorrhagic Stroke",
-                               df= ecmo_patients)
-shr_i_vasoactive <- univ_compete("ecmo_vasoactive_drugs_before",
-                                 stat=status_ICH, stype="Hemorrhagic Stroke",
-                                 df= ecmo_patients)
-shr_i_diabetes <- univ_compete( var= "comorbidity_diabetes",
-                                stat=status_ICH, stype="Hemorrhagic Stroke",
-                                df= ecmo_patients)
-shr_i_cardiac <- univ_compete("comorbidity_chronic_cardiac_disease",
-                              stat=status_ICH, stype="Hemorrhagic Stroke",
-                              df= ecmo_patients)
-shr_i_hypertension <- univ_compete("comorbidity_hypertension",
-                                   stat=status_ICH, stype="Hemorrhagic Stroke",
-                                   df= ecmo_patients)
-# shr_i_neuro <- univ_compete("comorbidity_chronic_neurological_disorder",
-#                             stat=status_ICH, stype="Hemorrhagic Stroke",
-#                             df= data.ids0)
-shr_i_pf <- univ_compete(var= "ecmo_worst_pa_o2_fi_o2_before", 
-                         var2="log2(ecmo_worst_pa_o2_fi_o2_before)",
-                         stat=status_ICH, stype="Hemorrhagic Stroke",
-                         df= ecmo_patients)
-shr_i_sofa <- univ_compete(var= "sofa",#var2="sofa + sofa^2" ,
-                           stat=status_ICH, stype="Hemorrhagic Stroke",
-                           df= ecmo_patients)
-shr_i_rel_o2_plus50 <- univ_compete(var= "rel_o2_plus50",
-                           stat=status_ICH, stype="Hemorrhagic Stroke",
-                           df= ecmo_patients)
-shr_i_rel_co2_neg50 <- univ_compete(var= "rel_co2_neg50",
-                                    stat=status_ICH, stype="Hemorrhagic Stroke",
-                                    df= ecmo_patients)
-shr_i_region <- univ_compete("income_region",
-                             stat=status_ICH, stype="Hemorrhagic Stroke",
-                             df= ecmo_patients)
-shr_i_era <- univ_compete("era",stat=status_ICH, stype="Hemorrhagic Stroke",
-                          df= ecmo_patients)
+# 
+# plot(x = newdf$delta_co2, y = newdf$hr, type = 'l', col = "red",xlab = "Delta CO2",
+#      ylab = "Hazard ratio for Delta CO2 with the Cox model using psplines")
+# lines(x = newdf$delta_co2, y = newdf$lci, col = "blue")
+# lines(x = newdf$delta_co2, y = newdf$uci, col = "blue")
+# abline(h = 1, col = "gray")
 
 
 
-# fisher.test(ecmo_patients$comorbidity_chronic_neurological_disorder, ecmo_patients$status2)
-
-### forestplot
-
-shr_i_data <- data.frame(rbind(#shr_i_ecmo,
-  shr_i_age, shr_i_sex,shr_i_vent_ecmo,
-  shr_i_ethnic,
-  shr_i_smoke, shr_i_obesity, 
-  shr_i_diabetes, shr_i_cardiac,
-  shr_i_hypertension,
-  # shr_i_neuro,
-  shr_i_vasoactive,
-  #shr_i_ac_before,
-  shr_i_anticoagulants,
-  shr_i_cannula_lumen, 
-  shr_i_pf,
-  shr_i_sofa,
-  shr_i_rel_o2_plus50,
-  shr_i_rel_co2_neg50,
-  shr_i_region, shr_i_era
-)) %>%
-  rename(mean=est) %>% #, lower=V2, upper = V3
-  mutate(sHR=paste0(roundz(mean, digits=2), " (",
-                    roundz(lower, digits=2),", ",
-                    roundz(upper, digits=2),")"),
-         N=as.character(N))
-shr_i_data$Variable = rownames(shr_i_data)
-rownames(shr_i_data) <- c()
-
-##nice labels
-shr_i_data <- shr_i_data %>%
-  mutate(Variable=case_when(#Variable == "ecmo" ~"During vs post ECMO",
-    Variable == "age" ~"Age",
-    Variable == "sexMale" ~"Male vs Female",
-    Variable == "ethnic_whiteYes" ~"White Ethnicity Yes vs No",
-    Variable == "current_smokerYes" ~"Current Smoker Yes vs No",
-    Variable == "income_regionHigh Income" ~"High vs Middle Income Region",
-    Variable == "comorbidity_obesityYes" ~"Obese Yes vs No",
-    Variable == "comorbidity_diabetesYes" ~"Co-morbid Diabetes Yes vs No",
-    Variable == "comorbidity_hypertensionYes" ~"Co-morbid Hypertension Yes vs No",
-    Variable == "comorbidity_chronic_cardiac_diseaseYes" ~
-      "Co-morbid Cardiac Disease Yes vs No",
-    Variable == "comorbidity_chronic_neurological_disorderYes" ~
-      "Co-morbid Chronic Neurological Disorder Yes vs No",
-    Variable == "ac_before" ~"Anticoagulant use before ECMO Yes vs No",
-    Variable == "eotd_anticoagulants" ~"Anticoagulant use during ECMO Yes vs No",
-    Variable =="ecmo_vasoactive_drugs_beforeYes" ~
-      "Pre-ECMO vasoactive medicine use Yes vs No",
-    Variable == "cannula_lumenSingle lumen" ~"Single vs double lumen cannula",
-    Variable == "days_vent_ecmo5" ~"Days ventilated pre-ECMO",
-    Variable == "log2(ecmo_worst_pa_o2_fi_o2_before)" ~"Doubling of P/F ratio",
-    Variable == "sofa" ~"SOFA",
-    Variable == "rel_o2_plus50TRUE" ~"Relative Delta O2 > 50% vs \u2264 50%",
-    Variable == "rel_co2_neg50TRUE" ~"Relative Delta CO2 < -50% vs \u2265 -50%",
-    Variable == "era.L" ~ "Pandemic era Jul-Dec 2020 vs Jan-Jun 2020",
-    Variable == "era.Q" ~ "Pandemic era Jan-Sep 2021 vs Jan-Dec 2020",
-    TRUE ~ Variable))
-
-headerc <- tibble(Variable = c("", "Variable"),
-                  N=c("","N"),
-                  sHR = c("", "subHR (95% CI)"))
+AIC(coxph(Surv(tstart, tstop, any_stroke) ~ cluster(site_name) + pspline(sofa,df=3), 
+            data = testdata, id=pin,
+            na.action = na.omit))
 
 
+summary(coxph(Surv(tstart, tstop, any_stroke) ~ cluster(site_name) + pspline(delta_o2,df=2)  
+              +  ecmo_worst_pa_o2_6hr_before
+              ,data = testdata, id=pin))
 
-shr_i_data <- bind_rows(headerc,shr_i_data)
-
-shr_i_forest <- shr_i_data %>% 
-  forestplot(labeltext = c(Variable, N, sHR),
-             title = "Hemorrhagic Stroke within 90 days of ECMO (death and other stroke as competing risks)",
-             xticks=xticks,
-             xlog = F, 
-             zero=1,
-             graph.pos=3,
-             boxsize=0.25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
-             col = fpColors(box = "royalblue",
-                            line = "darkblue"),
-             vertices = TRUE,
-             xlab="Subdistribution Hazard Ratio")
-
-shr_i_forest
-
-# ---- cox_CR_ICH ----
-##combine the cox and Cr forestplots for ICJ stroke
-
-headerc <- tibble(Variable = c( "Variable","Variable"),
-                  N=c("N","N"),
-                  HR = c("subHR/HR (95% CI)","subHR/HR (95% CI)"),
-                  Model = c("Competing Risks","Cox"))
+cox_co2 <- coxph(Surv(tstart, tstop, any_stroke) ~  pspline(delta_co2,df=2) + 
+                   pspline(ecmo_worst_pa_co2_6hr_before, df=2) + cluster(site_name),
+                 data = testdata, id=pin, x=T)
+summary(cox_co2)
+termplot(cox_co2, term = 1, se = T,plot = T)
 
 
-
-shr_i_data2 <- shr_i_data %>%
-  mutate(HR=paste0(" ",sHR))
-
-surv_hr_i_data=bind_rows(shr_i_data2 %>% select(!sHR) %>%
-                           mutate(Model = "Competing Risks"),
-                         hr_i_data  %>% 
-                           filter(Variable != "Co-morbid Chronic Neurological Disorder Yes vs No") %>%
-                           mutate(Model = "Cox") #%>% select(!HR)
-) %>%
-  filter(!is.na(mean))
-
-surv_hr_i_data=bind_rows(headerc,surv_hr_i_data)
-
-all_i_forest <- surv_hr_i_data %>% 
-  group_by(Model) %>%
-  forestplot(labeltext = c(Variable, N, HR), #
-             graph.pos=3,
-             title = "Hemorrhagic Stroke within 90 days of ECMO (univariable models)",
-             fn.ci_norm = c(fpDrawNormalCI, fpDrawCircleCI),
-             xticks=xticks,
-             xlog = F, 
-             zero=1,
-             line.margin = 0.5, #.2,
-             boxsize = .25,
-             txt_gp = fpTxtGp(label = gpar(cex = 0.8),
-                              ticks = gpar(cex = 0.8),
-                              xlab  = gpar(cex = 0.8)),
-             col = fpColors(box = c("cyan4","darkorange1"),
-                            line = c("cyan4","darkorange1")),
-             vertices = TRUE,
-             xlab="subHR/HR")
-
-all_i_forest

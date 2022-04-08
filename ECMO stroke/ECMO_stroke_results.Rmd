@@ -3,15 +3,15 @@ title: "ECMO Stroke Results"
 author: "Lan Kelly"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
-  # word_document:
-  # reference_docx: rmarkdown-styles-SAP.docx
-  html_document:
-    keep_md: yes
+  word_document:
+  reference_docx: rmarkdown-styles-SAP.docx
+  # html_document:
+  #   keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, 
-error=FALSE, comment='', dpi=300, dev = "png") 
+error=FALSE, comment='', dpi=300, dev = "png") #, compression="lzw"
 options(knitr.kable.NA = '')
 options(width=1000) # Wide pages
 options(scipen=999) # avoid scientific presentation
@@ -109,9 +109,11 @@ ecmo_patients <- ecmo_patients %>%
   mutate(fup_outcome = ifelse(as.character(status2) == "Censor",
                           "Alive",as.character(status2)),
          stat = ifelse(any_stroke == 1,
-                          "Stroke","No Stroke"))
+                          "Stroke","No Stroke"),
+         covid_pcr = case_when (outcome_diagnosis_based_on == "laboratory confirmation" ~ "Yes",
+                                TRUE ~ "No") )
 
-vars <- c('age','sex','ethnicity'
+vars <- c('covid_pcr','age','sex','ethnicity'
           ,'country',"income_group",
           'bmi','apache_ii','sofa','pregnant'
           ,"comorbidity_obesity" ,'comorbidity_immuno','comorbidity_hypertension'
@@ -128,7 +130,8 @@ tabdata = ecmo_patients %>%
   #                                     as.character(complication_stroke))) %>%
   filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
   select(all_of(vars),stat) %>%  #stroke_group4
-  set_variable_labels(age =  "Age",
+  set_variable_labels(covid_pcr = "Laboratory confirmed COVID-19",
+                      age =  "Age",
                      sex="Sex",
                      ethnicity="Ethnicity",
                      country='Country',
@@ -170,6 +173,14 @@ summary(tab1, title='Patient Characteristics')
 
 #var_label(tabdata)
 ##also include AC before, vasoactive before
+mycontrols  <- tableby.control(test=F, total=T,
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "gmean", "gsd"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",
+                                                 gmean = "Geometric mean", gsd='Geometric SD'),
+                               digits=2, digits.p=3, digits.pct=1)
+
 
 preecmo_vars <-c("ecmo_highest_fi_o2_6hr_before","ecmo_highest_peep_6hr_before",
          "ecmo_worst_pa_o2_6hr_before","ecmo_worst_pa_co2_6hr_before",
@@ -188,6 +199,8 @@ tabdata <- ecmo_patients %>%
   mutate(ac_before = case_when(ac_before == 1 ~ "Yes",
                                ac_before == 0 ~ "No",
                                is.na(ac_before) ~ NA_character_),
+         ecmo_highest_peep_6hr_before = ifelse(ecmo_highest_peep_6hr_before == 0,
+                                               0.01, ecmo_highest_peep_6hr_before),
          ecmo_highest_fi_o2_6hr_before = ifelse(
            ecmo_highest_fi_o2_6hr_before > 1, ecmo_highest_fi_o2_6hr_before/100,
            ecmo_highest_fi_o2_6hr_before)) %>%
@@ -216,7 +229,7 @@ summary(tab2, title='Pre-ECMO characteristics')
 
 
 \newpage
-## Post 48 hour ECMO characteristics
+## Change pre to post ECMO
 
 Post ECMO values are the first recorded in the 24-48 hours after ECMO initiation. 
 
@@ -224,14 +237,11 @@ Delta values are post-pre.
 
 Relative delta values are (post-pre)/pre.
 
+
 ```{r, results='asis'}
 library(scales)
-mycontrols  <- tableby.control(test=FALSE, total=T,
-                               na.action=na.tableby(F),
-                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
-                               cat.stats=c("N","Nmiss2","countpct"),
-                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
-                               digits=1, digits.p=2, digits.pct=1)
+
+
 
 postecmo_vars <-c("ecmo_48_pa_o2","ecmo_48_pa_co2",
          "ecmo_48_pa_o2_fi_o2","delta_o2",
@@ -258,11 +268,18 @@ tabdata <- ecmo_patients %>%
                       )
 
 
-formula <- as.formula(paste0("stat ~", paste0(postecmo_vars, collapse="+")))
+# formula <- as.formula(paste0("stat ~", paste0(postecmo_vars, collapse="+")))
+# 
+# tab2 <- tableby(formula, data=tabdata, control=mycontrols)
 
-tab2 <- tableby(formula, data=tabdata, control=mycontrols)
+tab2 <- tableby(stat ~ notest(ecmo_48_pa_o2,"N", "gmean", "gsd") 
+                + notest(ecmo_48_pa_co2,"N", "gmean", "gsd")
+                  + notest(ecmo_48_pa_o2_fi_o2, "N","gmean", "gsd") 
+                + notest(delta_o2, "N","median","q1q3") 
+                + notest(delta_co2,"N", "median","q1q3") 
+                + notest(rel_delta_o2,"N", "median","q1q3") 
+                +  notest(rel_delta_co2, "N","median","q1q3"), data=tabdata)
 summary(tab2, title='Post 48 hour ECMO characteristics')
-
 
 ```
 
@@ -275,12 +292,16 @@ summary(tab2, title='Post 48 hour ECMO characteristics')
 
 ```{r, results='asis'}
 
-mycontrols  <- tableby.control(test=FALSE, total=T,
+mycontrols  <- tableby.control(test=F, total=T,
                                na.action=na.tableby(F),
                                numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
                                cat.stats=c("N","Nmiss2","countpct"),
-                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
-                               digits=1, digits.p=2, digits.pct=1)
+                               stats.labels=list(N="N",Nmiss2="Missing",
+                                                  q1q3='IQR'),
+                               digits=1, digits.p=3, digits.pct=1)
+
+
+
 
 ecmo_vars <-c( 
          'days_sympt_hosp',"days_icu",'days_hosp', 'days_ecmo',
@@ -295,6 +316,9 @@ tabdata <- ecmo_patients %>%
   #                                     as.character(complication_stroke))) %>%
   filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
   select(all_of(ecmo_vars), stat) %>%
+  mutate(outcome = case_when(grepl("Discharge",outcome) ~ "Discharged",
+                             grepl("Transfer",outcome) ~ "Transferred",
+                            TRUE ~ outcome)) %>%
   set_variable_labels(anticoagulants = "Anticoagulant Use",
                       days_icu = "Days in ICU",
                       days_ecmo='Length of the ECMO run',
@@ -304,7 +328,7 @@ tabdata <- ecmo_patients %>%
                       days_sympt_hosp="Days from first symptoms to hospitalisation",
                       day='Day put on ECMO',
                       days_fup = "Days of Follow-up",
-                      outcome='Final outcome at hospital discharge (may be after the end of 90 day follow-up)',
+                      outcome='Discharge destination',
                       stat = "Stroke Yes or No")
 
 
@@ -331,6 +355,12 @@ cannula_vars <-c('cannula_lumen',"ecmo_location_cannulation",
                  "ecmo_IJ_cannula_size_DL","ecmo_IJ_cannula_size_SL",
                  "ecmo_circuit_change")
 
+mycontrols  <- tableby.control(test=FALSE, total=T,
+                               na.action=na.tableby(F),
+                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               cat.stats=c("N","Nmiss2","countpct"),
+                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
+                               digits=1, digits.p=2, digits.pct=1)
 
 tabdata <- ecmo_patients %>%
   # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
@@ -381,17 +411,19 @@ lab_vars <-c("pa_o2","pa_co2", "pa_o2_fi_o2",
                 "aptt" ,
                 "haemoglobin")
 
-mycontrols  <- tableby.control(test=FALSE, total=T,
+mycontrols  <- tableby.control(test=F, total=T,
                                na.action=na.tableby(F),
-                               numeric.stats=c("N","Nmiss2", "median", "q1q3"), #,"min","max"
+                               numeric.stats=c("N","Nmiss2", "gmean", "gsd"), #,"min","max"
                                cat.stats=c("N","Nmiss2","countpct"),
-                               stats.labels=list(N="N",Nmiss2="Missing",q1q3='IQR'),
-                               digits=1, digits.p=2, digits.pct=1)
+                               stats.labels=list(N="N",Nmiss2="Missing",
+                                                 gmean = "Geometric mean", gsd='Geometric SD'),
+                               digits=2, digits.p=3, digits.pct=1)
 
 
 tabdata <- left_join(ecmo_patients %>% select(pin), ecmo_daily, by="pin") %>%
   mutate(stat = ifelse(any_stroke == 1,
-                          "Stroke","No Stroke")) %>%
+                          "Stroke","No Stroke"), 
+         eotd_peep = ifelse(eotd_peep == 0.0, 0.01, eotd_peep)) %>%  #get rid of zeros
   # mutate(complication_stroke = ifelse(is.na(complication_stroke), 'Missing', 
   #                                     as.character(complication_stroke))) %>%
   filter(stroke_after_ecmo != "No" | is.na(stroke_after_ecmo)) %>%
@@ -712,9 +744,10 @@ The main limitation of the analysis is the large amount of missing data for some
 
 
 
-
 \newpage
 # Appendix
+
+
 
 ## Joint model fit and convergence
 The models were fitted with 4 chains, 100000 iterations, 20000 burn-ins per chain and 20 thinnings.
@@ -730,6 +763,5 @@ Using ridge priors to penalise the regression coefficients showed very little ch
 ```{r jm_forest_CR_ridge, fig.width=9, fig.height=9, dpi=300}
 
 ```
-
 
 
